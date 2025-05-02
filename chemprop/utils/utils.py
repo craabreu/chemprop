@@ -3,8 +3,8 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Iterable, Iterator
 
-import numpy as np
 from rdkit import Chem
+import numpy as np
 
 
 class EnumMapping(StrEnum):
@@ -148,12 +148,15 @@ def set_relative_neighbor_ranking(mol: Chem.Mol, force: bool = False) -> None:
     ...     mol = Chem.MolFromSmiles(smiles)
     ...     set_relative_neighbor_ranking(mol)
     ...     print_rankings(mol)
+    ...     print("Flip:", mol.GetAtomWithIdx(1).GetBoolProp("flipChiralTag"))
     <BLANKLINE>
     Molecule: C[C@](O)(S)N
     C1 ('S3', 0) ('O2', 1) ('N4', 2) ('C0', 3)
+    Flip: False
     <BLANKLINE>
     Molecule: C[C@@](S)(O)N
     C1 ('S2', 0) ('O3', 1) ('N4', 2) ('C0', 3)
+    Flip: True
 
     """
     if not force and mol.HasProp("hasNeighborRanks"):
@@ -170,6 +173,13 @@ def set_relative_neighbor_ranking(mol: Chem.Mol, force: bool = False) -> None:
         neighbor_priorities = all_priorities[neighbors]
         ranks = np.searchsorted(np.sort(neighbor_priorities), neighbor_priorities)
         sorted_neighbors.append(dict(zip(neighbors, ranks)))
+
+        # Handle tetrahedral stereocenters
+        if atom.GetChiralTag() in (
+            Chem.ChiralType.CHI_TETRAHEDRAL_CW,
+            Chem.ChiralType.CHI_TETRAHEDRAL_CCW,
+        ):
+            atom.SetBoolProp("flipChiralTag", is_odd_permutation(*ranks))
 
     for bond in mol.GetBonds():
         begin, end = bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()
