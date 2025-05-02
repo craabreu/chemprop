@@ -3,8 +3,8 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Iterable, Iterator
 
-from rdkit import Chem
 import numpy as np
+from rdkit import Chem
 
 
 class EnumMapping(StrEnum):
@@ -148,15 +148,42 @@ def set_relative_neighbor_ranking(mol: Chem.Mol, force: bool = False) -> None:
     ...     mol = Chem.MolFromSmiles(smiles)
     ...     set_relative_neighbor_ranking(mol)
     ...     print_rankings(mol)
-    ...     print("Flip:", mol.GetAtomWithIdx(1).GetBoolProp("flipChiralTag"))
+    ...     print("Flip tag:", mol.GetAtomWithIdx(1).GetBoolProp("flipChiralTag"))
     <BLANKLINE>
     Molecule: C[C@](O)(S)N
     C1 ('S3', 0) ('O2', 1) ('N4', 2) ('C0', 3)
-    Flip: False
+    Flip tag: False
     <BLANKLINE>
     Molecule: C[C@@](S)(O)N
     C1 ('S2', 0) ('O3', 1) ('N4', 2) ('C0', 3)
-    Flip: True
+    Flip tag: True
+
+    Assign neighbor ranks to molecules with a stereogenic double bond:
+
+    >>> for smiles in [r"CC(/Cl)=C(N)/C", r"CC(/Cl)=C(\N)C"]:
+    ...     print(f"\nMolecule: {smiles}")
+    ...     mol = Chem.MolFromSmiles(smiles)
+    ...     set_relative_neighbor_ranking(mol)
+    ...     print_rankings(mol)
+    ...     bond = mol.GetBondWithIdx(2)
+    ...     print(
+    ...         "Originally:",
+    ...         ["Trans", "Cis"][bond.GetStereo() == Chem.BondStereo.STEREOCIS],
+    ...         *bond.GetStereoAtoms()
+    ...     )
+    ...     print("Flip stereo:", bond.GetBoolProp("flipStereo"))
+    <BLANKLINE>
+    Molecule: CC(/Cl)=C(N)/C
+    C1 ('C3', 0) ('Cl2', 1) ('C0', 2)
+    C3 ('C1', 0) ('N4', 1) ('C5', 2)
+    Originally: Cis 2 5
+    Flip stereo: True
+    <BLANKLINE>
+    Molecule: CC(/Cl)=C(\N)C
+    C1 ('C3', 0) ('Cl2', 1) ('C0', 2)
+    C3 ('C1', 0) ('N4', 1) ('C5', 2)
+    Originally: Trans 2 4
+    Flip stereo: False
 
     """
     if not force and mol.HasProp("hasNeighborRanks"):
@@ -167,6 +194,7 @@ def set_relative_neighbor_ranking(mol: Chem.Mol, force: bool = False) -> None:
         ),
         dtype=int,
     )
+    Chem.SetBondStereoFromDirections(mol)
     sorted_neighbors = []
     for atom in mol.GetAtoms():
         neighbors = np.fromiter((atom.GetIdx() for atom in atom.GetNeighbors()), dtype=int)
@@ -185,6 +213,22 @@ def set_relative_neighbor_ranking(mol: Chem.Mol, force: bool = False) -> None:
         begin, end = bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()
         bond.SetIntProp("endRankFromBegin", int(sorted_neighbors[begin][end]))
         bond.SetIntProp("beginRankFromEnd", int(sorted_neighbors[end][begin]))
+
+        # Handle cis/trans stereobonds
+        if bond.GetStereo() in (Chem.BondStereo.STEREOCIS, Chem.BondStereo.STEREOTRANS):
+            left, right = bond.GetStereoAtoms()
+            left_rank_is_min = not any(
+                v < sorted_neighbors[begin][left]
+                for k, v in sorted_neighbors[begin].items()
+                if k != end
+            )
+            right_rank_is_min = not any(
+                v < sorted_neighbors[end][right]
+                for k, v in sorted_neighbors[end].items()
+                if k != begin
+            )
+            bond.SetBoolProp("flipStereo", left_rank_is_min != right_rank_is_min)
+
     mol.SetBoolProp("hasNeighborRanks", True)
 
 
