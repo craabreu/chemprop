@@ -81,35 +81,52 @@ def is_odd_permutation(i: int, j: int, k: int, m: int | None = None) -> int:
     return bool(swaps % 2)
 
 
-def set_relative_neighbor_ranking(mol: Chem.Mol, force: bool = False) -> None:
-    r"""Add neighbor ranking information to the bonds of a molecule.
+CHIRAL_CENTER_TAGS = {Chem.ChiralType.CHI_TETRAHEDRAL_CW, Chem.ChiralType.CHI_TETRAHEDRAL_CCW}
 
-    Neighbors of each atom are sorted in descending order based on their canonical
-    ranks (see :rdmolfiles:`CanonicalRankAtoms`). The descending order keeps hydrogens
-    at the end of the list.
+STEREOGENIC_BOND_TAGS = {
+    Chem.BondStereo.STEREOCIS,
+    Chem.BondStereo.STEREOTRANS,
+    Chem.BondStereo.STEREOZ,
+    Chem.BondStereo.STEREOE,
+}
 
-    Two integer properties are added to each bond in the molecule:
 
-    - `endRankFromBegin`: The relative rank of the bond's end atom with respect to all
-        neighbors of the bond's begin atom.
-    - `beginRankFromEnd`: The relative rank of the bond's begin atom with respect to all
-        neighbors of the bond's end atom.
+def assign_neighbor_ranking(mol: Chem.Mol, force: bool = False) -> None:
+    r"""Assign canonical neighbor ranks and indicate whether to flip stereochemical tags.
 
-    A relative rank is the position in a sorted list of canonical ranks in descending
-    order. For example, if an atom has three neighbors with canonical ranks `(3, 1, 7)`,
-    their relative ranks are `(1, 2, 0)`. Tied canonical ranks result in the same
-    relative rank, corresponding to the least position they occupy in the descending
-    sorted list.
+    The neighbors of each atom in the molecule are sorted in descending order of their canonical
+    ranks (as assigned by :func:`rdkit.Chem.CanonicalRankAtoms`). The resulting relative ranking
+    indicates the neighbor's position in this sorted list, with lower values corresponding to
+    higher canonical ranks. Hydrogens are placed at the end of the list due to their low atomic
+    number and connectivity.
 
-    The molecule is tagged with a boolean property `hasNeighborRanks` set to True.
+    The relative ranking is stored as integer properties on each bond in the molecule:
+
+    - `endRankFromBegin`: the relative rank of the bond's end atom among the neighbors of the
+      begin atom.
+    - `beginRankFromEnd`: the relative rank of the bond's begin atom among the neighbors of the
+      end atom.
+
+    For example, neighbors with canonical ranks `[3, 1, 4]` will have relative ranks `[1, 2, 0]`.
+    Ties result in the same relative rank. For example, if the canonical ranks are `[3, 1, 1]`,
+    the relative ranks will be `[2, 0, 0]`.
+
+    A boolean property `flipChiralTag` is added to each tetrahedral chiral center (i.e., an atom
+    with chiral tag `CHI_TETRAHEDRAL_CW` or `CHI_TETRAHEDRAL_CCW`). Another boolean property
+    `flipStereo` is added to each stereogenic double bond (i.e., one with stereo tag `STEREOCIS`,
+    `STEREOTRANS`, `STEREOZ`, or `STEREOE`). These properties indicate whether the tag should be
+    flipped to match the canonical neighbor ranking.
+
+    The molecule is also tagged with a boolean property ``hasNeighborRanks`` set to True to
+    indicate that relative neighbor ranking has been computed.
 
     Parameters
     ----------
-    mol
-        The molecule to add neighbor ranking information to.
-    force
-        Whether to add neighbor ranking information even if it has already been added
-        (default is False).
+    mol : rdkit.Chem.Mol
+        The molecule whose bonds and stereocenters will be annotated.
+    force : bool, default=False
+        Whether to recompute rankings and overwrite any existing annotations, even if
+        the molecule already has a ``hasNeighborRanks`` property set to True.
 
     Examples
     --------
@@ -134,7 +151,7 @@ def set_relative_neighbor_ranking(mol: Chem.Mol, force: bool = False) -> None:
     Assign neighbor ranks to a molecule
 
     >>> mol = Chem.MolFromSmiles("NC(O)=C(OC)OC")
-    >>> set_relative_neighbor_ranking(mol)
+    >>> assign_neighbor_ranking(mol)
     >>> print_rankings(mol)
     C1 ('C3', 0) ('O2', 1) ('N0', 2)
     C3 ('C1', 0) ('O4', 1) ('O6', 1)
@@ -146,7 +163,7 @@ def set_relative_neighbor_ranking(mol: Chem.Mol, force: bool = False) -> None:
     >>> for smiles in ["C[C@](O)(S)N", "C[C@@](S)(O)N"]:
     ...     print(f"\nMolecule: {smiles}")
     ...     mol = Chem.MolFromSmiles(smiles)
-    ...     set_relative_neighbor_ranking(mol)
+    ...     assign_neighbor_ranking(mol)
     ...     print_rankings(mol)
     ...     print("Flip tag:", mol.GetAtomWithIdx(1).GetBoolProp("flipChiralTag"))
     <BLANKLINE>
@@ -163,50 +180,47 @@ def set_relative_neighbor_ranking(mol: Chem.Mol, force: bool = False) -> None:
     >>> for smiles in [r"CC(/Cl)=C(N)/C", r"CC(/Cl)=C(\N)C"]:
     ...     print(f"\nMolecule: {smiles}")
     ...     mol = Chem.MolFromSmiles(smiles)
-    ...     set_relative_neighbor_ranking(mol)
+    ...     assign_neighbor_ranking(mol)
     ...     print_rankings(mol)
-    ...     bond = mol.GetBondWithIdx(2)
-    ...     print(
-    ...         "Originally:",
-    ...         ["Trans", "Cis"][bond.GetStereo() == Chem.BondStereo.STEREOCIS],
-    ...         *bond.GetStereoAtoms()
-    ...     )
-    ...     print("Flip stereo:", bond.GetBoolProp("flipStereo"))
+    ...     for set_from_directions in [False, True]:
+    ...         if set_from_directions:
+    ...             Chem.SetBondStereoFromDirections(mol)
+    ...             assign_neighbor_ranking(mol, force=True)
+    ...         bond = mol.GetBondWithIdx(2)
+    ...         print("Originally:", bond.GetStereo().name, *bond.GetStereoAtoms())
+    ...         print("Flip stereo:", bond.GetBoolProp("flipStereo"))
     <BLANKLINE>
     Molecule: CC(/Cl)=C(N)/C
     C1 ('C3', 0) ('Cl2', 1) ('C0', 2)
     C3 ('C1', 0) ('N4', 1) ('C5', 2)
-    Originally: Cis 2 5
+    Originally: STEREOE 2 4
+    Flip stereo: False
+    Originally: STEREOCIS 2 5
     Flip stereo: True
     <BLANKLINE>
     Molecule: CC(/Cl)=C(\N)C
     C1 ('C3', 0) ('Cl2', 1) ('C0', 2)
     C3 ('C1', 0) ('N4', 1) ('C5', 2)
-    Originally: Trans 2 4
+    Originally: STEREOE 2 4
+    Flip stereo: False
+    Originally: STEREOTRANS 2 4
     Flip stereo: False
 
     """
-    if not force and mol.HasProp("hasNeighborRanks"):
+    if not force and mol.HasProp("hasNeighborRanks") and mol.GetBoolProp("hasNeighborRanks"):
         return
-    all_priorities = -np.fromiter(
-        Chem.CanonicalRankAtoms(
-            mol, breakTies=False, includeChirality=False, includeAtomMaps=False
-        ),
-        dtype=int,
+    atom_ranks = Chem.CanonicalRankAtoms(
+        mol, breakTies=False, includeChirality=False, includeAtomMaps=False
     )
-    Chem.SetBondStereoFromDirections(mol)
+    atom_priorities = -np.fromiter(atom_ranks, dtype=int)
     sorted_neighbors = []
     for atom in mol.GetAtoms():
         neighbors = np.fromiter((atom.GetIdx() for atom in atom.GetNeighbors()), dtype=int)
-        neighbor_priorities = all_priorities[neighbors]
+        neighbor_priorities = atom_priorities[neighbors]
         ranks = np.searchsorted(np.sort(neighbor_priorities), neighbor_priorities)
         sorted_neighbors.append(dict(zip(neighbors, ranks)))
 
-        # Handle tetrahedral stereocenters
-        if atom.GetChiralTag() in (
-            Chem.ChiralType.CHI_TETRAHEDRAL_CW,
-            Chem.ChiralType.CHI_TETRAHEDRAL_CCW,
-        ):
+        if atom.GetChiralTag() in CHIRAL_CENTER_TAGS:
             atom.SetBoolProp("flipChiralTag", is_odd_permutation(*ranks))
 
     for bond in mol.GetBonds():
@@ -214,8 +228,7 @@ def set_relative_neighbor_ranking(mol: Chem.Mol, force: bool = False) -> None:
         bond.SetIntProp("endRankFromBegin", int(sorted_neighbors[begin][end]))
         bond.SetIntProp("beginRankFromEnd", int(sorted_neighbors[end][begin]))
 
-        # Handle cis/trans stereobonds
-        if bond.GetStereo() in (Chem.BondStereo.STEREOCIS, Chem.BondStereo.STEREOTRANS):
+        if bond.GetStereo() in STEREOGENIC_BOND_TAGS:
             left, right = bond.GetStereoAtoms()
             left_rank_is_min = not any(
                 v < sorted_neighbors[begin][left]
