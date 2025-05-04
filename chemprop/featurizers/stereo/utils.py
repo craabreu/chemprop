@@ -53,9 +53,7 @@ def assign_neighbor_ranking(mol: Chem.Mol, force: bool = False) -> None:
 
     >>> mol = Chem.MolFromSmiles("NC(O)=C(OC)OC")
     >>> assign_neighbor_ranking(mol)
-    >>> for atom in mol.GetAtoms():
-    ...     if len(atom.GetNeighbors()) > 1:
-    ...         print(neighbor_ranking_string(atom))
+    >>> print(describe_neighbor_ranking(mol))
     C1 C3:0 O2:1 N0:2
     C3 C1:0 O4:1 O6:1
     O4 C3:0 C5:1
@@ -64,51 +62,35 @@ def assign_neighbor_ranking(mol: Chem.Mol, force: bool = False) -> None:
     Assign neighbor ranks to molecules with a tetrahedral chiral center
 
     >>> for smiles in ["C[C@](O)(S)N", "C[C@@](S)(O)N"]:
-    ...     print(f"\nMolecule: {smiles}")
+    ...     print(f"Molecule: {smiles}")
     ...     mol = Chem.MolFromSmiles(smiles)
     ...     assign_neighbor_ranking(mol)
-    ...     print(neighbor_ranking_string(mol.GetAtomWithIdx(1)))
-    ...     print("Flip tag:", mol.GetAtomWithIdx(1).GetBoolProp("flipChiralTag"))
-    <BLANKLINE>
+    ...     print(describe_neighbor_ranking(mol))
     Molecule: C[C@](O)(S)N
-    C1 S3:0 O2:1 N4:2 C0:3
-    Flip tag: False
-    <BLANKLINE>
+    C1 S3:0 O2:1 N4:2 C0:3 (CHI_TETRAHEDRAL_CCW)
     Molecule: C[C@@](S)(O)N
-    C1 S2:0 O3:1 N4:2 C0:3
-    Flip tag: True
+    C1 S2:0 O3:1 N4:2 C0:3 (CHI_TETRAHEDRAL_CCW)
 
     Assign neighbor ranks to molecules with a stereogenic double bond:
 
     >>> for smiles in [r"CC(/Cl)=C(N)/C", r"CC(/Cl)=C(\N)C"]:
-    ...     print(f"\nMolecule: {smiles}")
+    ...     print(f"Molecule: {smiles}")
     ...     mol = Chem.MolFromSmiles(smiles)
-    ...     assign_neighbor_ranking(mol)
-    ...     for index in [1, 3]:
-    ...         print(neighbor_ranking_string(mol.GetAtomWithIdx(index)))
     ...     for set_from_directions in [False, True]:
     ...         if set_from_directions:
     ...             Chem.SetBondStereoFromDirections(mol)
     ...             assign_neighbor_ranking(mol, force=True)
-    ...         bond = mol.GetBondWithIdx(2)
-    ...         print("Originally:", bond.GetStereo().name, *bond.GetStereoAtoms())
-    ...         print("Flip stereo:", bond.GetBoolProp("flipStereo"))
-    <BLANKLINE>
+    ...         print(describe_neighbor_ranking(mol))
     Molecule: CC(/Cl)=C(N)/C
+    Molecule does not have neighbor ranks.
     C1 C3:0 Cl2:1 C0:2
     C3 C1:0 N4:1 C5:2
-    Originally: STEREOE 2 4
-    Flip stereo: False
-    Originally: STEREOCIS 2 5
-    Flip stereo: True
-    <BLANKLINE>
+    C1-C3 STEREOTRANS
     Molecule: CC(/Cl)=C(\N)C
+    Molecule does not have neighbor ranks.
     C1 C3:0 Cl2:1 C0:2
     C3 C1:0 N4:1 C5:2
-    Originally: STEREOE 2 4
-    Flip stereo: False
-    Originally: STEREOTRANS 2 4
-    Flip stereo: False
+    C1-C3 STEREOTRANS
 
     """
     if not force and mol.HasProp("hasNeighborRanks") and mol.GetBoolProp("hasNeighborRanks"):
@@ -157,46 +139,79 @@ def assign_neighbor_ranking(mol: Chem.Mol, force: bool = False) -> None:
     mol.SetBoolProp("hasNeighborRanks", True)
 
 
-def neighbor_ranking_string(atom: Chem.Atom) -> None:
-    """Return a string representation of the neighbor ranking for a given atom.
+def describe_neighbor_ranking(mol: Chem.Mol, include_leaves: bool = False) -> str:
+    """Return a string representation of the neighbor ranking for all atoms in a molecule.
 
     Parameters
     ----------
-    atom : Chem.Atom
-        The RDKit atom for which the neighbor ranking string is generated.
+    mol : Chem.Mol
+        The RDKit molecule for which the neighbor ranking strings are generated.
+    include_leaves : bool, optional
+        Whether to include leaves (i.e., atoms with only one neighbor) in the neighbor ranking
+        strings. The default is ``False``.
 
     Returns
     -------
     str
-        A string that lists the atom itself followed by its neighbors and their ranks.
-        The format is "AtomSymbolAtomIndex NeighborSymbolNeighborIndex:Rank ...",
-        with neighbors sorted by their rank.
+        A string that lists the neighbor ranking strings for all atoms in the molecule.
 
     Example
     -------
-    >>> mol = Chem.MolFromSmiles("CCO")
+    >>> mol = Chem.MolFromSmiles("C[C@](O)(/C=C/O)N")
+    >>> print(describe_neighbor_ranking(mol))
+    Molecule does not have neighbor ranks.
     >>> assign_neighbor_ranking(mol)
-    >>> atom = mol.GetAtomWithIdx(1)
-    >>> neighbor_ranking_string(atom)
-    'C1 O2:0 C0:1'
+    >>> print(describe_neighbor_ranking(mol))
+    C1 C3:0 O2:1 N6:2 C0:3 (CHI_TETRAHEDRAL_CCW)
+    C3 C1:0 C4:1
+    C4 C3:0 O5:1
+    C3-C4 STEREOTRANS
+    >>> print(describe_neighbor_ranking(mol, include_leaves=True))
+    C0 C1:0
+    C1 C3:0 O2:1 N6:2 C0:3 (CHI_TETRAHEDRAL_CCW)
+    O2 C1:0
+    C3 C1:0 C4:1
+    C4 C3:0 O5:1
+    O5 C4:0
+    N6 C1:0
+    C3-C4 STEREOTRANS
 
     """
-    atom_idx = atom.GetIdx()
-    neighbors = []
-    for bond in atom.GetBonds():
-        begin, end = bond.GetBeginAtom(), bond.GetEndAtom()
-        if begin.GetIdx() == atom_idx:
-            neighbor = end
-            rank = bond.GetIntProp("endRankFromBegin")
-        else:
-            neighbor = begin
-            rank = bond.GetIntProp("beginRankFromEnd")
-        neighbors.append((neighbor, rank))
-    neighbors.sort(key=lambda x: x[1])
-    output = [f"{atom.GetSymbol()}{atom_idx}"]
-    for neighbor, rank in neighbors:
-        output.append(f"{neighbor.GetSymbol()}{neighbor.GetIdx()}:{rank}")
-    return " ".join(output)
+    if not (mol.HasProp("hasNeighborRanks") and mol.GetBoolProp("hasNeighborRanks")):
+        return "Molecule does not have neighbor ranks."
+
+    def atom_str(atom: Chem.Atom) -> str:
+        return f"{atom.GetSymbol()}{atom.GetIdx()}"
+
+    lines = []
+    for atom in mol.GetAtoms():
+        bonds = atom.GetBonds()
+        if len(bonds) > 1 or include_leaves:
+            atom_idx = atom.GetIdx()
+            neighbors = []
+            for bond in atom.GetBonds():
+                begin, end = bond.GetBeginAtom(), bond.GetEndAtom()
+                if begin.GetIdx() == atom_idx:
+                    neighbor = end
+                    rank = bond.GetIntProp("endRankFromBegin")
+                else:
+                    neighbor = begin
+                    rank = bond.GetIntProp("beginRankFromEnd")
+                neighbors.append((neighbor, rank))
+            neighbors.sort(key=lambda x: x[1])
+            output = [f"{atom.GetSymbol()}{atom_idx}"]
+            for neighbor, rank in neighbors:
+                output.append(f"{atom_str(neighbor)}:{rank}")
+            tag = get_canonical_chiral_tag(atom)
+            if tag != Chem.ChiralType.CHI_UNSPECIFIED:
+                output.append(f"({tag.name})")
+            lines.append(" ".join(output))
+    for bond in mol.GetBonds():
+        tag = get_canonical_stereo(bond)
+        if tag != Chem.BondStereo.STEREONONE:
+            begin, end = bond.GetBeginAtom(), bond.GetEndAtom()
+            lines.append(f"{atom_str(begin)}-{atom_str(end)} {tag.name}")
+    return "\n".join(lines)
 
 
 def get_canonical_chiral_tag(atom: Chem.Atom) -> Chem.ChiralType:
@@ -214,13 +229,17 @@ def get_canonical_chiral_tag(atom: Chem.Atom) -> Chem.ChiralType:
 
     Example
     -------
-    >>> for smiles in ["C[C@](O)(S)N", "C[C@](S)(O)N"]:
+    >>> for smiles in ["C[C@](O)(S)N", "C[C@](S)(O)N", "C[C@@](S)(O)N"]:
+    ...     print(f"Molecule: {smiles}")
     ...     mol = Chem.MolFromSmiles(smiles)
     ...     assign_neighbor_ranking(mol)
-    ...     atom = mol.GetAtomWithIdx(1)
-    ...     print(neighbor_ranking_string(atom), get_canonical_chiral_tag(atom).name)
-    C1 S3:0 O2:1 N4:2 C0:3 CHI_TETRAHEDRAL_CCW
-    C1 S2:0 O3:1 N4:2 C0:3 CHI_TETRAHEDRAL_CW
+    ...     print(describe_neighbor_ranking(mol))
+    Molecule: C[C@](O)(S)N
+    C1 S3:0 O2:1 N4:2 C0:3 (CHI_TETRAHEDRAL_CCW)
+    Molecule: C[C@](S)(O)N
+    C1 S2:0 O3:1 N4:2 C0:3 (CHI_TETRAHEDRAL_CW)
+    Molecule: C[C@@](S)(O)N
+    C1 S2:0 O3:1 N4:2 C0:3 (CHI_TETRAHEDRAL_CCW)
 
     """
     chiral_tag = atom.GetChiralTag()
@@ -252,13 +271,18 @@ def get_canonical_stereo(bond: Chem.Bond) -> Chem.BondStereo:
     Example
     -------
     >>> for smiles in [r"CC(/Cl)=C(N)/C", r"CC(/Cl)=C(\N)F"]:
+    ...     print(f"Molecule: {smiles}")
     ...     mol = Chem.MolFromSmiles(smiles)
-    ...     atoms = map(mol.GetAtomWithIdx, [1, 3])
-    ...     bond = mol.GetBondBetweenAtoms(1, 3)
     ...     assign_neighbor_ranking(mol)
-    ...     print(*map(neighbor_ranking_string, atoms), get_canonical_stereo(bond).name)
-    C1 C3:0 Cl2:1 C0:2 C3 C1:0 N4:1 C5:2 STEREOTRANS
-    C1 C3:0 Cl2:1 C0:2 C3 C1:0 F5:1 N4:2 STEREOCIS
+    ...     print(describe_neighbor_ranking(mol))
+    Molecule: CC(/Cl)=C(N)/C
+    C1 C3:0 Cl2:1 C0:2
+    C3 C1:0 N4:1 C5:2
+    C1-C3 STEREOTRANS
+    Molecule: CC(/Cl)=C(\N)F
+    C1 C3:0 Cl2:1 C0:2
+    C3 C1:0 F5:1 N4:2
+    C1-C3 STEREOCIS
 
     """
     stereo = bond.GetStereo()

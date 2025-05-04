@@ -77,6 +77,7 @@ def pretty_shape(shape: Iterable[int]) -> str:
 
     Example
     --------
+    >>> import numpy as np
     >>> X = np.random.rand(10, 4)
     >>> X.shape
     (10, 4)
