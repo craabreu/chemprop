@@ -181,7 +181,6 @@ def neighbor_ranking_string(atom: Chem.Atom) -> None:
     'C1 O2:0 C0:1'
 
     """
-
     atom_idx = atom.GetIdx()
     neighbors = []
     for bond in atom.GetBonds():
@@ -224,7 +223,6 @@ def get_canonical_chiral_tag(atom: Chem.Atom) -> Chem.ChiralType:
     C1 S2:0 O3:1 N4:2 C0:3 CHI_TETRAHEDRAL_CW
 
     """
-
     chiral_tag = atom.GetChiralTag()
     if chiral_tag not in {Chem.ChiralType.CHI_TETRAHEDRAL_CW, Chem.ChiralType.CHI_TETRAHEDRAL_CCW}:
         return chiral_tag
@@ -263,7 +261,6 @@ def get_canonical_stereo(bond: Chem.Bond) -> Chem.BondStereo:
     C1 C3:0 Cl2:1 C0:2 C3 C1:0 F5:1 N4:2 STEREOCIS
 
     """
-
     stereo = bond.GetStereo()
     if stereo not in {
         Chem.BondStereo.STEREOCIS,
