@@ -22,18 +22,18 @@ class StereoBondFeaturizer(MultiHotFeaturizer[Chem.Bond]):
     Example
     -------
     >>> from rdkit import Chem
-    >>> from chemprop.featurizers.stereo import assign_neighbor_ranking, neighbor_ranking_string
+    >>> from chemprop.featurizers.stereo import assign_neighbor_ranking, describe_neighbor_ranking
     >>> mol = Chem.MolFromSmiles("C[C@](O)(/C=C/O)N")
     >>> assign_neighbor_ranking(mol)
-    >>> for atom in mol.GetAtoms():
-    ...     print(neighbor_ranking_string(atom))
+    >>> print(describe_neighbor_ranking(mol, include_leaves=True))
     C0 C1:0
-    C1 C3:0 O2:1 N6:2 C0:3
+    C1 C3:0 O2:1 N6:2 C0:3 (CHI_TETRAHEDRAL_CCW)
     O2 C1:0
     C3 C1:0 C4:1
     C4 C3:0 O5:1
     O5 C4:0
     N6 C1:0
+    C3-C4 STEREOTRANS
     >>> for backward in [False, True]:
     ...     featurizer = StereoBondFeaturizer(backward=backward)
     ...     print(["Forward:", "Backward:"][backward])
@@ -86,3 +86,11 @@ class StereoBondFeaturizer(MultiHotFeaturizer[Chem.Bond]):
             OneHotFeaturizer(get_canonical_stereo, stereos, padding=True),
             OneHotFeaturizer(lambda b: b.GetIntProp(rank_property), neighbor_ranks, padding=True),
         )
+
+    @classmethod
+    def backward(cls):
+        """Return a version of this featurizer that featurizes bonds in reverse direction.
+
+        This is useful when featurizing molecules in an asymmetric way.
+        """
+        return cls(backward=True)

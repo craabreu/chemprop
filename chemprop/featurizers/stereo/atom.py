@@ -14,20 +14,23 @@ class StereoAtomFeaturizer(MultiHotAtomFeaturizer):
     Example
     -------
     >>> from rdkit import Chem
-    >>> from chemprop.featurizers.stereo import assign_neighbor_ranking
+    >>> from chemprop.featurizers.stereo import assign_neighbor_ranking, describe_neighbor_ranking
     >>> for smiles in ["C[C@H](O)N", "C[C@@H](N)O"]:
+    ...     print("Molecule:", smiles)
     ...     mol = Chem.MolFromSmiles(smiles)
     ...     assign_neighbor_ranking(mol)
+    ...     print(describe_neighbor_ranking(mol))
     ...     featurizer = StereoAtomFeaturizer.v2()
-    ...     print("Smiles:", smiles)
     ...     for atom in mol.GetAtoms():
     ...         print(featurizer.to_string(atom))
-    Smiles: C[C@H](O)N
+    Molecule: C[C@H](O)N
+    C1 O2:0 N3:1 C0:2 (CHI_TETRAHEDRAL_CCW)
     00000100000000000000000000000000000000 0000100 000010 10000 000100 00001000 0 0.120
     00000100000000000000000000000000000000 0000100 000010 00100 010000 00001000 0 0.120
     00000001000000000000000000000000000000 0010000 000010 10000 010000 00001000 0 0.160
     00000010000000000000000000000000000000 0001000 000010 10000 001000 00001000 0 0.140
-    Smiles: C[C@@H](N)O
+    Molecule: C[C@@H](N)O
+    C1 O3:0 N2:1 C0:2 (CHI_TETRAHEDRAL_CCW)
     00000100000000000000000000000000000000 0000100 000010 10000 000100 00001000 0 0.120
     00000100000000000000000000000000000000 0000100 000010 00100 010000 00001000 0 0.120
     00000010000000000000000000000000000000 0001000 000010 10000 001000 00001000 0 0.140
