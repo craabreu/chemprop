@@ -1,7 +1,7 @@
-from dataclasses import InitVar, field
+from dataclasses import InitVar, dataclass, field
 
 import numpy as np
-from rdkit import Chem
+from rdkit.Chem.rdchem import Atom, Bond, Mol
 
 from chemprop.data.molgraph import MolGraph
 from chemprop.featurizers.base import VectorFeaturizer
@@ -12,9 +12,9 @@ from .bond import StereoBondFeaturizer
 from .utils import assign_neighbor_ranking
 
 
+@dataclass
 class StereoMolGraphFeaturizer(SimpleMoleculeMolGraphFeaturizer):
-    r"""A :class:`SimpleMoleculeMolGraphFeaturizer` is the default implementation of a
-    :class:`MoleculeMolGraphFeaturizer`
+    """A :class:`MolGraphFeaturizer` that computes enhanced stereochemical features.
 
     Parameters
     ----------
@@ -40,24 +40,31 @@ class StereoMolGraphFeaturizer(SimpleMoleculeMolGraphFeaturizer):
     Example
     -------
     >>> from rdkit import Chem
-    >>> mol = Chem.MolFromSmiles("C=CO")
+    >>> from chemprop.featurizers.stereo import describe_neighbor_ranking
+    >>> mol = Chem.MolFromSmiles("C[C@H](N)O")
     >>> featurizer = StereoMolGraphFeaturizer()
     >>> print(featurizer.to_string(mol))
-    0: 00000100000000000000000000000000000000 0001000 000010 10000 001000 00100000 0 0.120
-    1: 00000100000000000000000000000000000000 0001000 000010 10000 010000 00100000 0 0.120
-    2: 00000001000000000000000000000000000000 0010000 000010 10000 010000 00100000 0 0.160
-    0→1: 0 0100 1 0 1000000
-    0←1: 0 0100 1 0 1000000
-    0→2: 1 0000 0 0 0000000
-    0←2: 1 0000 0 0 0000000
-    1→2: 0 1000 1 0 1000000
-    1←2: 0 1000 1 0 1000000
+    0: 00000100000000000000000000000000000000 0000100 000010 10000 000100 00001000 0 0.120
+    1: 00000100000000000000000000000000000000 0000100 000010 01000 010000 00001000 0 0.120
+    2: 00000010000000000000000000000000000000 0001000 000010 10000 001000 00001000 0 0.140
+    3: 00000001000000000000000000000000000000 0010000 000010 10000 010000 00001000 0 0.160
+    0→1: 0 1000 0 0 10000 00100
+    0←1: 0 1000 0 0 10000 10000
+    1→2: 0 1000 0 0 10000 10000
+    1←2: 0 1000 0 0 10000 01000
+    1→3: 0 1000 0 0 10000 10000
+    1←3: 0 1000 0 0 10000 10000
+    >>> print(describe_neighbor_ranking(mol, include_leaves=True))
+    C0 C1:0
+    C1 O3:0 N2:1 C0:2 (CHI_TETRAHEDRAL_CW)
+    N2 C1:0
+    O3 C1:0
 
     """
 
-    atom_featurizer: VectorFeaturizer[Chem.Atom] = field(default_factory=StereoAtomFeaturizer.v2)
-    bond_featurizer: VectorFeaturizer[Chem.Bond] = field(default_factory=StereoBondFeaturizer)
-    backward_bond_featurizer: VectorFeaturizer[Chem.Bond] | None = field(
+    atom_featurizer: VectorFeaturizer[Atom] = field(default_factory=StereoAtomFeaturizer.v2)
+    bond_featurizer: VectorFeaturizer[Bond] = field(default_factory=StereoBondFeaturizer.forward)
+    backward_bond_featurizer: VectorFeaturizer[Bond] = field(
         default_factory=StereoBondFeaturizer.backward
     )
     extra_atom_fdim: InitVar[int] = 0
@@ -65,9 +72,13 @@ class StereoMolGraphFeaturizer(SimpleMoleculeMolGraphFeaturizer):
 
     def __call__(
         self,
-        mol: Chem.Mol,
+        mol: Mol,
         atom_features_extra: np.ndarray | None = None,
         bond_features_extra: np.ndarray | None = None,
     ) -> MolGraph:
         assign_neighbor_ranking(mol)
         return super().__call__(mol, atom_features_extra, bond_features_extra)
+
+    def to_string(self, mol: Mol, decimals: int = 3) -> str:
+        assign_neighbor_ranking(mol)
+        return super().to_string(mol, decimals)
