@@ -1,5 +1,6 @@
 import numpy as np
-from rdkit import Chem
+from rdkit.Chem.rdchem import Atom, Bond, BondStereo, ChiralType, Mol
+from rdkit.Chem.rdmolfiles import CanonicalRankAtoms
 
 
 def is_odd_permutation(i: int, j: int, k: int, m: int | None = None) -> int:
@@ -10,7 +11,7 @@ def is_odd_permutation(i: int, j: int, k: int, m: int | None = None) -> int:
     return bool(swaps % 2)
 
 
-def assign_neighbor_ranking(mol: Chem.Mol, force: bool = False) -> None:
+def assign_neighbor_ranking(mol: Mol, force: bool = False) -> None:
     r"""Assign canonical neighbor ranks and indicate whether to flip stereochemical tags.
 
     The neighbors of each atom in the molecule are sorted in descending order of their canonical
@@ -51,6 +52,7 @@ def assign_neighbor_ranking(mol: Chem.Mol, force: bool = False) -> None:
     --------
     Assign neighbor ranks to a molecule
 
+    >>> from rdkit import Chem
     >>> mol = Chem.MolFromSmiles("NC(O)=C(OC)OC")
     >>> assign_neighbor_ranking(mol)
     >>> print(describe_neighbor_ranking(mol))
@@ -95,7 +97,7 @@ def assign_neighbor_ranking(mol: Chem.Mol, force: bool = False) -> None:
     """
     if not force and mol.HasProp("hasNeighborRanks") and mol.GetBoolProp("hasNeighborRanks"):
         return
-    atom_ranks = Chem.CanonicalRankAtoms(
+    atom_ranks = CanonicalRankAtoms(
         mol, breakTies=False, includeChirality=False, includeAtomMaps=False
     )
     atom_priorities = -np.fromiter(atom_ranks, dtype=int)
@@ -106,10 +108,7 @@ def assign_neighbor_ranking(mol: Chem.Mol, force: bool = False) -> None:
         ranks = np.searchsorted(np.sort(neighbor_priorities), neighbor_priorities)
         sorted_neighbors.append(dict(zip(neighbors, ranks)))
 
-        if atom.GetChiralTag() in {
-            Chem.ChiralType.CHI_TETRAHEDRAL_CW,
-            Chem.ChiralType.CHI_TETRAHEDRAL_CCW,
-        }:
+        if atom.GetChiralTag() in {ChiralType.CHI_TETRAHEDRAL_CW, ChiralType.CHI_TETRAHEDRAL_CCW}:
             atom.SetBoolProp("flipChiralTag", is_odd_permutation(*ranks))
 
     for bond in mol.GetBonds():
@@ -118,10 +117,10 @@ def assign_neighbor_ranking(mol: Chem.Mol, force: bool = False) -> None:
         bond.SetIntProp("beginRankFromEnd", int(sorted_neighbors[end][begin]))
 
         if bond.GetStereo() in {
-            Chem.BondStereo.STEREOCIS,
-            Chem.BondStereo.STEREOTRANS,
-            Chem.BondStereo.STEREOZ,
-            Chem.BondStereo.STEREOE,
+            BondStereo.STEREOCIS,
+            BondStereo.STEREOTRANS,
+            BondStereo.STEREOZ,
+            BondStereo.STEREOE,
         }:
             left, right = bond.GetStereoAtoms()
             left_rank_is_min = not any(
@@ -139,7 +138,7 @@ def assign_neighbor_ranking(mol: Chem.Mol, force: bool = False) -> None:
     mol.SetBoolProp("hasNeighborRanks", True)
 
 
-def describe_neighbor_ranking(mol: Chem.Mol, include_leaves: bool = False) -> str:
+def describe_neighbor_ranking(mol: Mol, include_leaves: bool = False) -> str:
     """Return a string representation of the neighbor ranking for all atoms in a molecule.
 
     Parameters
@@ -157,6 +156,7 @@ def describe_neighbor_ranking(mol: Chem.Mol, include_leaves: bool = False) -> st
 
     Example
     -------
+    >>> from rdkit import Chem
     >>> mol = Chem.MolFromSmiles("C[C@](O)(/C=C/O)N")
     >>> print(describe_neighbor_ranking(mol))
     Molecule does not have neighbor ranks.
@@ -180,7 +180,7 @@ def describe_neighbor_ranking(mol: Chem.Mol, include_leaves: bool = False) -> st
     if not (mol.HasProp("hasNeighborRanks") and mol.GetBoolProp("hasNeighborRanks")):
         return "Molecule does not have neighbor ranks."
 
-    def atom_str(atom: Chem.Atom) -> str:
+    def atom_str(atom: Atom) -> str:
         return f"{atom.GetSymbol()}{atom.GetIdx()}"
 
     lines = []
@@ -203,18 +203,18 @@ def describe_neighbor_ranking(mol: Chem.Mol, include_leaves: bool = False) -> st
             for neighbor, rank in neighbors:
                 output.append(f"{atom_str(neighbor)}:{rank}")
             tag = get_canonical_chiral_tag(atom)
-            if tag != Chem.ChiralType.CHI_UNSPECIFIED:
+            if tag != ChiralType.CHI_UNSPECIFIED:
                 output.append(f"({tag.name})")
             lines.append(" ".join(output))
     for bond in mol.GetBonds():
         tag = get_canonical_stereo(bond)
-        if tag != Chem.BondStereo.STEREONONE:
+        if tag != BondStereo.STEREONONE:
             begin, end = bond.GetBeginAtom(), bond.GetEndAtom()
             lines.append(f"{atom_str(begin)}-{atom_str(end)} {tag.name}")
     return "\n".join(lines)
 
 
-def get_canonical_chiral_tag(atom: Chem.Atom) -> Chem.ChiralType:
+def get_canonical_chiral_tag(atom: Atom) -> ChiralType:
     """Return the canonical chiral tag of an atom.
 
     Parameters
@@ -224,11 +224,12 @@ def get_canonical_chiral_tag(atom: Chem.Atom) -> Chem.ChiralType:
 
     Returns
     -------
-    Chem.ChiralType
+    ChiralType
         The chiral tag of the atom.
 
     Example
     -------
+    >>> from rdkit import Chem
     >>> for smiles in ["C[C@](O)(S)N", "C[C@](S)(O)N", "C[C@@](S)(O)N"]:
     ...     print(f"Molecule: {smiles}")
     ...     mol = Chem.MolFromSmiles(smiles)
@@ -243,15 +244,15 @@ def get_canonical_chiral_tag(atom: Chem.Atom) -> Chem.ChiralType:
 
     """
     chiral_tag = atom.GetChiralTag()
-    if chiral_tag not in {Chem.ChiralType.CHI_TETRAHEDRAL_CW, Chem.ChiralType.CHI_TETRAHEDRAL_CCW}:
+    if chiral_tag not in {ChiralType.CHI_TETRAHEDRAL_CW, ChiralType.CHI_TETRAHEDRAL_CCW}:
         return chiral_tag
     flip = atom.HasProp("flipChiralTag") and atom.GetBoolProp("flipChiralTag")
-    if (chiral_tag == Chem.ChiralType.CHI_TETRAHEDRAL_CW) == flip:
-        return Chem.ChiralType.CHI_TETRAHEDRAL_CCW
-    return Chem.ChiralType.CHI_TETRAHEDRAL_CW
+    if (chiral_tag == ChiralType.CHI_TETRAHEDRAL_CW) == flip:
+        return ChiralType.CHI_TETRAHEDRAL_CCW
+    return ChiralType.CHI_TETRAHEDRAL_CW
 
 
-def get_canonical_stereo(bond: Chem.Bond) -> Chem.BondStereo:
+def get_canonical_stereo(bond: Bond) -> BondStereo:
     r"""Return the canonical stereochemistry flag of a bond.
 
     .. note::
@@ -265,11 +266,12 @@ def get_canonical_stereo(bond: Chem.Bond) -> Chem.BondStereo:
 
     Returns
     -------
-    Chem.BondStereo
+    BondStereo
         The stereochemistry flag of the bond.
 
     Example
     -------
+    >>> from rdkit import Chem
     >>> for smiles in [r"CC(/Cl)=C(N)/C", r"CC(/Cl)=C(\N)F"]:
     ...     print(f"Molecule: {smiles}")
     ...     mol = Chem.MolFromSmiles(smiles)
@@ -287,13 +289,13 @@ def get_canonical_stereo(bond: Chem.Bond) -> Chem.BondStereo:
     """
     stereo = bond.GetStereo()
     if stereo not in {
-        Chem.BondStereo.STEREOCIS,
-        Chem.BondStereo.STEREOTRANS,
-        Chem.BondStereo.STEREOZ,
-        Chem.BondStereo.STEREOE,
+        BondStereo.STEREOCIS,
+        BondStereo.STEREOTRANS,
+        BondStereo.STEREOZ,
+        BondStereo.STEREOE,
     }:
         return stereo
     flip = bond.HasProp("flipStereo") and bond.GetBoolProp("flipStereo")
-    if (stereo in {Chem.BondStereo.STEREOCIS, Chem.BondStereo.STEREOZ}) == flip:
-        return Chem.BondStereo.STEREOTRANS
-    return Chem.BondStereo.STEREOCIS
+    if (stereo in {BondStereo.STEREOCIS, BondStereo.STEREOZ}) == flip:
+        return BondStereo.STEREOTRANS
+    return BondStereo.STEREOCIS

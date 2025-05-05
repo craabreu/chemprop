@@ -1,6 +1,6 @@
 from typing import Sequence
 
-from rdkit import Chem
+from rdkit.Chem.rdchem import ChiralType, HybridizationType
 
 from chemprop.featurizers.atom import MultiHotAtomFeaturizer
 from chemprop.featurizers.base import OneHotFeaturizer, ValueFeaturizer
@@ -43,9 +43,9 @@ class StereoAtomFeaturizer(MultiHotAtomFeaturizer):
         atomic_nums: Sequence[int],
         degrees: Sequence[int],
         formal_charges: Sequence[int],
-        chiral_tags: Sequence[Chem.ChiralType | int],
+        chiral_tags: Sequence[ChiralType | int],
         num_Hs: Sequence[int],
-        hybridizations: Sequence[Chem.HybridizationType | int],
+        hybridizations: Sequence[HybridizationType | int],
     ):
         self.atomic_nums = atomic_nums
         self.degrees = degrees
