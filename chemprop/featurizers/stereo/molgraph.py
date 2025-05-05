@@ -40,9 +40,9 @@ class StereoMolGraphFeaturizer(SimpleMoleculeMolGraphFeaturizer):
     Example
     -------
     >>> from rdkit import Chem
-    >>> from chemprop.featurizers.stereo import describe_neighbor_ranking
+    >>> from chemprop.featurizers import stereo
     >>> mol = Chem.MolFromSmiles("C[C@H](N)O")
-    >>> featurizer = StereoMolGraphFeaturizer()
+    >>> featurizer = stereo.StereoMolGraphFeaturizer()
     >>> print(featurizer.to_string(mol))
     0: 00000100000000000000000000000000000000 0000100 000010 10000 000100 00001000 0 0.120
     1: 00000100000000000000000000000000000000 0000100 000010 01000 010000 00001000 0 0.120
@@ -54,7 +54,7 @@ class StereoMolGraphFeaturizer(SimpleMoleculeMolGraphFeaturizer):
     1←2: 0 1000 0 0 10000 01000
     1→3: 0 1000 0 0 10000 10000
     1←3: 0 1000 0 0 10000 10000
-    >>> print(describe_neighbor_ranking(mol, include_leaves=True))
+    >>> print(stereo.describe_neighbor_ranking(mol, include_leaves=True))
     C0 C1:0
     C1 O3:0 N2:1 C0:2 (CHI_TETRAHEDRAL_CW)
     N2 C1:0

@@ -38,10 +38,10 @@ class StereoBondFeaturizer(MultiHotFeaturizer[Bond]):
     Example
     -------
     >>> from rdkit import Chem
-    >>> from chemprop.featurizers.stereo import assign_neighbor_ranking, describe_neighbor_ranking
+    >>> from chemprop.featurizers import stereo
     >>> mol = Chem.MolFromSmiles("C[C@](O)(/C=C/O)N")
-    >>> assign_neighbor_ranking(mol)
-    >>> print(describe_neighbor_ranking(mol, include_leaves=True))
+    >>> stereo.assign_neighbor_ranking(mol)
+    >>> print(stereo.describe_neighbor_ranking(mol, include_leaves=True))
     C0 C1:0
     C1 C3:0 O2:1 N6:2 C0:3 (CHI_TETRAHEDRAL_CCW)
     O2 C1:0
@@ -50,8 +50,8 @@ class StereoBondFeaturizer(MultiHotFeaturizer[Bond]):
     O5 C4:0
     N6 C1:0
     C3-C4 STEREOTRANS
-    >>> for direction in EdgeDirection:
-    ...     featurizer = StereoBondFeaturizer(direction)
+    >>> for direction in stereo.EdgeDirection:
+    ...     featurizer = stereo.StereoBondFeaturizer(direction)
     ...     print(["Forward:", "Backward:"][direction == EdgeDirection.BACKWARD])
     ...     for bond in mol.GetBonds():
     ...         begin, end = bond.GetBeginAtom(), bond.GetEndAtom()
