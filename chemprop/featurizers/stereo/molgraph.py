@@ -36,6 +36,9 @@ class StereoMolGraphFeaturizer(SimpleMoleculeMolGraphFeaturizer):
     extra_bond_fdim : int, default=0
         the dimension of the additional features that will be concatenated onto the calculated
         features of each bond
+    all_atoms : bool, default=False
+        whether to include neighbor rankings for all atoms, not just chiral centers and atoms
+        engaged in cis-trans double bonds
 
     Example
     -------
@@ -49,16 +52,11 @@ class StereoMolGraphFeaturizer(SimpleMoleculeMolGraphFeaturizer):
     2: 00000010000000000000000000000000000000 0001000 000010 10000 001000 00001000 0 0.140
     3: 00000001000000000000000000000000000000 0010000 000010 10000 010000 00001000 0 0.160
     0→1: 0 1000 0 0 10000 00100
-    0←1: 0 1000 0 0 10000 10000
-    1→2: 0 1000 0 0 10000 10000
+    0←1: 0 1000 0 0 10000 00001
+    1→2: 0 1000 0 0 10000 00001
     1←2: 0 1000 0 0 10000 01000
-    1→3: 0 1000 0 0 10000 10000
+    1→3: 0 1000 0 0 10000 00001
     1←3: 0 1000 0 0 10000 10000
-    >>> print(stereo.describe_neighbor_ranking(mol, include_leaves=True))
-    C0 C1:0
-    C1 O3:0 N2:1 C0:2 (CHI_TETRAHEDRAL_CW)
-    N2 C1:0
-    O3 C1:0
 
     """
 
@@ -69,6 +67,13 @@ class StereoMolGraphFeaturizer(SimpleMoleculeMolGraphFeaturizer):
     )
     extra_atom_fdim: InitVar[int] = 0
     extra_bond_fdim: InitVar[int] = 0
+    all_atoms: InitVar[bool] = False
+
+    def __post_init__(
+        self, extra_atom_fdim: int = 0, extra_bond_fdim: int = 0, all_atoms: bool = False
+    ):
+        super().__post_init__(extra_atom_fdim, extra_bond_fdim)
+        self.all_atoms = all_atoms
 
     def __call__(
         self,
@@ -76,9 +81,9 @@ class StereoMolGraphFeaturizer(SimpleMoleculeMolGraphFeaturizer):
         atom_features_extra: np.ndarray | None = None,
         bond_features_extra: np.ndarray | None = None,
     ) -> MolGraph:
-        assign_neighbor_ranking(mol)
+        assign_neighbor_ranking(mol, all_atoms=self.all_atoms)
         return super().__call__(mol, atom_features_extra, bond_features_extra)
 
     def to_string(self, mol: Mol, decimals: int = 3) -> str:
-        assign_neighbor_ranking(mol)
+        assign_neighbor_ranking(mol, all_atoms=self.all_atoms)
         return super().to_string(mol, decimals)

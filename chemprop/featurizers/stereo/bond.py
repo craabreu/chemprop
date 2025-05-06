@@ -9,7 +9,7 @@ from chemprop.featurizers.base import (
     ValueFeaturizer,
 )
 
-from .utils import get_canonical_stereo
+from .utils import get_begin_rank, get_canonical_stereo, get_end_rank
 
 
 class EdgeDirection(Enum):
@@ -51,21 +51,21 @@ class StereoBondFeaturizer(MultiHotFeaturizer[Bond]):
     Forward:
     C0 C1 0 1000 0 0 10000 00010
     C1 O2 0 1000 0 0 10000 00001
-    C1 C3 0 1000 0 0 10000 10000
-    C3 C4 0 0100 1 0 00010 00001
+    C1 C3 0 1000 0 0 10000 01000
+    C3 C4 0 0100 1 0 00010 10000
     C4 O5 0 1000 1 0 10000 00001
     C1 N6 0 1000 0 0 10000 00001
     Backward:
     C0 C1 0 1000 0 0 10000 00001
     C1 O2 0 1000 0 0 10000 01000
     C1 C3 0 1000 0 0 10000 10000
-    C3 C4 0 0100 1 0 00010 00001
-    C4 O5 0 1000 1 0 10000 10000
+    C3 C4 0 0100 1 0 00010 10000
+    C4 O5 0 1000 1 0 10000 01000
     C1 N6 0 1000 0 0 10000 00100
     >>> print(stereo.describe_neighbor_ranking(mol))
-    C1 C3 O2 N6 C0 (CHI_TETRAHEDRAL_CCW)
-    C3 C1 (STEREOTRANS with C4)
-    C4 O5 (STEREOTRANS with C3)
+    C1 C3:0 O2:1 N6:2 C0:3 (CHI_TETRAHEDRAL_CCW)
+    C3 C4:0 C1:1 (STEREOTRANS)
+    C4 C3:0 O5:1 (STEREOTRANS)
 
     References
     ----------
@@ -74,8 +74,6 @@ class StereoBondFeaturizer(MultiHotFeaturizer[Bond]):
     """
 
     def __init__(self, edge_direction: EdgeDirection):
-        if edge_direction not in EdgeDirection:
-            raise TypeError(f"Expected EdgeDirection, got {type(edge_direction)}")
         self.edge_direction = edge_direction
         bond_types = (BondType.SINGLE, BondType.DOUBLE, BondType.TRIPLE, BondType.AROMATIC)
         stereos = (
@@ -85,11 +83,13 @@ class StereoBondFeaturizer(MultiHotFeaturizer[Bond]):
             BondStereo.STEREOTRANS,
         )
         neighbor_ranks = tuple(range(4))
-        rank_property = (
-            "beginRankFromEnd"
-            if self.edge_direction == EdgeDirection.FORWARD
-            else "endRankFromBegin"
-        )
+        match edge_direction:
+            case EdgeDirection.FORWARD:
+                get_rank = get_begin_rank
+            case EdgeDirection.BACKWARD:
+                get_rank = get_end_rank
+            case _:
+                raise TypeError(f"Expected EdgeDirection, got {type(edge_direction)}")
 
         super().__init__(
             NullityFeaturizer(),
@@ -97,11 +97,7 @@ class StereoBondFeaturizer(MultiHotFeaturizer[Bond]):
             ValueFeaturizer(lambda b: b.GetIsConjugated(), int),
             ValueFeaturizer(lambda b: b.IsInRing(), int),
             OneHotFeaturizer(get_canonical_stereo, stereos, padding=True),
-            OneHotFeaturizer(
-                lambda b: b.GetIntProp(rank_property) if b.HasProp(rank_property) else -1,
-                neighbor_ranks,
-                padding=True,
-            ),
+            OneHotFeaturizer(get_rank, neighbor_ranks, padding=True),
         )
 
     @classmethod
