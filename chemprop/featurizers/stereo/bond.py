@@ -41,15 +41,6 @@ class StereoBondFeaturizer(MultiHotFeaturizer[Bond]):
     >>> from chemprop.featurizers import stereo
     >>> mol = Chem.MolFromSmiles("C[C@](O)(/C=C/O)N")
     >>> stereo.assign_neighbor_ranking(mol)
-    >>> print(stereo.describe_neighbor_ranking(mol, include_leaves=True))
-    C0 C1:0
-    C1 C3:0 O2:1 N6:2 C0:3 (CHI_TETRAHEDRAL_CCW)
-    O2 C1:0
-    C3 C1:0 C4:1
-    C4 C3:0 O5:1
-    O5 C4:0
-    N6 C1:0
-    C3-C4 STEREOTRANS
     >>> for direction in stereo.EdgeDirection:
     ...     featurizer = stereo.StereoBondFeaturizer(direction)
     ...     print(["Forward:", "Backward:"][direction == EdgeDirection.BACKWARD])
@@ -59,18 +50,22 @@ class StereoBondFeaturizer(MultiHotFeaturizer[Bond]):
     ...         print(*atoms, featurizer.to_string(bond))
     Forward:
     C0 C1 0 1000 0 0 10000 00010
-    C1 O2 0 1000 0 0 10000 10000
+    C1 O2 0 1000 0 0 10000 00001
     C1 C3 0 1000 0 0 10000 10000
-    C3 C4 0 0100 1 0 00010 10000
-    C4 O5 0 1000 1 0 10000 10000
-    C1 N6 0 1000 0 0 10000 10000
+    C3 C4 0 0100 1 0 00010 00001
+    C4 O5 0 1000 1 0 10000 00001
+    C1 N6 0 1000 0 0 10000 00001
     Backward:
-    C0 C1 0 1000 0 0 10000 10000
+    C0 C1 0 1000 0 0 10000 00001
     C1 O2 0 1000 0 0 10000 01000
     C1 C3 0 1000 0 0 10000 10000
-    C3 C4 0 0100 1 0 00010 01000
-    C4 O5 0 1000 1 0 10000 01000
+    C3 C4 0 0100 1 0 00010 00001
+    C4 O5 0 1000 1 0 10000 10000
     C1 N6 0 1000 0 0 10000 00100
+    >>> print(stereo.describe_neighbor_ranking(mol))
+    C1 C3 O2 N6 C0 (CHI_TETRAHEDRAL_CCW)
+    C3 C1 (STEREOTRANS with C4)
+    C4 O5 (STEREOTRANS with C3)
 
     References
     ----------
@@ -102,7 +97,11 @@ class StereoBondFeaturizer(MultiHotFeaturizer[Bond]):
             ValueFeaturizer(lambda b: b.GetIsConjugated(), int),
             ValueFeaturizer(lambda b: b.IsInRing(), int),
             OneHotFeaturizer(get_canonical_stereo, stereos, padding=True),
-            OneHotFeaturizer(lambda b: b.GetIntProp(rank_property), neighbor_ranks, padding=True),
+            OneHotFeaturizer(
+                lambda b: b.GetIntProp(rank_property) if b.HasProp(rank_property) else -1,
+                neighbor_ranks,
+                padding=True,
+            ),
         )
 
     @classmethod
