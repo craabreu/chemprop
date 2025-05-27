@@ -20,6 +20,7 @@ from chemprop.nn.metrics import (
     MulticlassMCCMetric,
     MVELoss,
     QuantileLoss,
+    TriquantileLoss,
 )
 from chemprop.nn.transforms import UnscaleTransform
 from chemprop.utils import ClassRegistry, Factory
@@ -36,6 +37,7 @@ __all__ = [
     "MulticlassClassificationFFN",
     "MulticlassDirichletFFN",
     "SpectralFFN",
+    "TriquantileFFN",
 ]
 
 
@@ -221,6 +223,26 @@ class QuantileFFN(RegressionFFN):
         interval = upper_bound - lower_bound
 
         return torch.stack((mean, interval), dim=2)
+
+    train_step = forward
+
+
+@PredictorRegistry.register("regression-triquantile")
+class TriquantileFFN(RegressionFFN):
+    n_targets = 3
+    _T_default_criterion = TriquantileLoss
+
+    def forward(self, Z: Tensor) -> Tensor:
+        lower_bound, median, upper_bound = torch.chunk(self.ffn(Z), self.n_targets, 1)
+
+        lower_bound = self.output_transform(lower_bound)
+        median = self.output_transform(median)
+        upper_bound = self.output_transform(upper_bound)
+
+        # mean = (lower_bound + upper_bound) / 2
+        # interval = upper_bound - lower_bound
+
+        return torch.stack((median, lower_bound, upper_bound), dim=2)
 
     train_step = forward
 

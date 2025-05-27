@@ -49,6 +49,7 @@ __all__ = [
     "SID",
     "Wasserstein",
     "QuantileLoss",
+    "TriquantileLoss",
 ]
 
 
@@ -562,6 +563,34 @@ class QuantileLoss(ChempropMetric):
 
     def _calc_unreduced_loss(self, preds: Tensor, targets: Tensor, mask: Tensor, *args) -> Tensor:
         mean, interval = torch.unbind(preds, dim=-1)
+
+        interval_bounds = self.bounds * interval
+        pred_bounds = mean + interval_bounds
+        error_bounds = targets - pred_bounds
+        loss_bounds = (self.tau * error_bounds).amax(0)
+
+        return loss_bounds.sum(0)
+
+    def extra_repr(self) -> str:
+        return f"alpha={self.alpha}"
+
+
+@LossFunctionRegistry.register("triquantile")
+class TriquantileLoss(ChempropMetric):
+    def __init__(self, task_weights: ArrayLike = 1.0, alpha: float = 0.1):
+        super().__init__(task_weights)
+        self.alpha = alpha
+
+        bounds = torch.tensor([-1 / 2, 0, 1 / 2]).view(-1, 1, 1)
+        tau = torch.tensor([[alpha / 2, 0, 1 - alpha / 2], [alpha / 2 - 1, -1, -alpha / 2]]).view(
+            3, 2, 1, 1
+        )
+
+        self.register_buffer("bounds", bounds)
+        self.register_buffer("tau", tau)
+
+    def _calc_unreduced_loss(self, preds: Tensor, targets: Tensor, mask: Tensor, *args) -> Tensor:
+        mean, interval, _ = torch.unbind(preds, dim=-1)
 
         interval_bounds = self.bounds * interval
         pred_bounds = mean + interval_bounds
