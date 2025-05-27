@@ -372,6 +372,10 @@ class QuantileRegressionEstimator(UncertaintyEstimator):
             predss = trainer.predict(model, dataloader)
             individual_preds.append(torch.concat(predss, 0))
         stacked_preds = torch.stack(individual_preds).float()
-        mean, interval = stacked_preds.unbind(-1)
-        half_interval = interval / 2
-        return mean, half_interval
+        if stacked_preds.shape[-1] == 2:
+            mean, interval = stacked_preds.unbind(-1)
+            half_interval = interval / 2
+            return mean, half_interval
+        elif stacked_preds.shape[-1] == 3:
+            median, lower, upper = stacked_preds.unbind(-1)
+            return median, median - lower, upper - median
