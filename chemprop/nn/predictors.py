@@ -233,16 +233,15 @@ class TriquantileFFN(RegressionFFN):
     _T_default_criterion = TriquantileLoss
 
     def forward(self, Z: Tensor) -> Tensor:
-        lower_bound, median, upper_bound = torch.chunk(self.ffn(Z), self.n_targets, 1)
+        median, offset_down, offset_up = torch.chunk(self.ffn(Z), self.n_targets, 1)
+        lower_quantile = median - F.softplus(offset_down)
+        upper_quantile = median + F.softplus(offset_up)
 
-        lower_bound = self.output_transform(lower_bound)
         median = self.output_transform(median)
-        upper_bound = self.output_transform(upper_bound)
+        lower_quantile = self.output_transform(lower_quantile)
+        upper_quantile = self.output_transform(upper_quantile)
 
-        # mean = (lower_bound + upper_bound) / 2
-        # interval = upper_bound - lower_bound
-
-        return torch.stack((median, lower_bound, upper_bound), dim=2)
+        return torch.stack((median, lower_quantile, upper_quantile), dim=2)
 
     train_step = forward
 

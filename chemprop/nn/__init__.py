@@ -40,8 +40,8 @@ from .metrics import (
     MVELoss,
     QuantileLoss,
     R2Score,
-    Wasserstein,
     TriquantileLoss,
+    Wasserstein,
 )
 from .predictors import (
     BinaryClassificationFFN,

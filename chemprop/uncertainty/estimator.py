@@ -376,6 +376,4 @@ class QuantileRegressionEstimator(UncertaintyEstimator):
             mean, interval = stacked_preds.unbind(-1)
             half_interval = interval / 2
             return mean, half_interval
-        elif stacked_preds.shape[-1] == 3:
-            median, lower, upper = stacked_preds.unbind(-1)
-            return median, median - lower, upper - median
+        return stacked_preds.unbind(-1)
