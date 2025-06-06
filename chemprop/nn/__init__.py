@@ -56,6 +56,7 @@ from .predictors import (
     QuantileFFN,
     RegressionFFN,
     SpectralFFN,
+    TriquantileScheme,
     TriquantileFFN,
 )
 from .transforms import GraphTransform, ScaleTransform, UnscaleTransform
@@ -128,4 +129,5 @@ __all__ = [
     "UnscaleTransform",
     "TriquantileLoss",
     "TriquantileFFN",
+    "TriquantileScheme",
 ]

@@ -588,7 +588,7 @@ class TriquantileLoss(ChempropMetric):
         )
 
     def _calc_unreduced_loss(self, preds: Tensor, targets: Tensor, mask: Tensor, *args) -> Tensor:
-        return (self.tau * (preds - targets.unsqueeze(-1))).amax(0).sum(0)
+        return (self.tau * (preds - targets.unsqueeze(-1))).amax(0).sum(-1)
 
     def extra_repr(self) -> str:
         return f"alpha={self.alpha}"
