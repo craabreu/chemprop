@@ -843,15 +843,30 @@ class QuantileRegressionEstimator(UncertaintyEstimator):
         )
         means = []
         half_intervals = []
+        skewnesses = []
         for individual_preds in individual_preds_tuple:
             if individual_preds:
                 stacked_preds = torch.stack(individual_preds).float()
-                mean, interval = stacked_preds.unbind(-1)
+                if stacked_preds.shape[-1] == 2:
+                    mean, interval = stacked_preds.unbind(-1)
+                    half_interval = interval / 2
+                    skewness = None
+                else:
+                    median, lower_quantile, upper_quantile = stacked_preds.unbind(-1)
+                    mean = (upper_quantile + lower_quantile) / 2
+                    half_interval = (upper_quantile - lower_quantile) / 2
+                    skewness = (mean - median) / half_interval
                 means.append(mean)
-                half_intervals.append(interval / 2)
+                half_intervals.append(half_interval)
+                skewnesses.append(skewness)
             else:
                 means.append(None)
                 half_intervals.append(None)
+                skewnesses.append(None)
         if not_mol_atom_bond:
-            return means[0], half_intervals[0]
-        return means, half_intervals
+            if skewnesses[0] is None:
+                return means[0], half_intervals[0]
+            return means[0], half_intervals[0], skewnesses[0]
+        if all(sk is None for sk in skewnesses):
+            return means, half_intervals
+        return means, half_intervals, skewnesses

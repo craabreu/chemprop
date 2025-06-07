@@ -135,3 +135,21 @@ def test_quantile_quick(regression_mpnn_quantile, dataloader):
         fast_dev_run=True,
     )
     trainer.fit(regression_mpnn_quantile, dataloader, None)
+
+
+@pytest.mark.parametrize(
+    "regression_mpnn_tri_quantile", [nn.BondMessagePassing(), nn.AtomMessagePassing()], indirect=True
+)
+@pytest.mark.integration
+def test_tri_quantile_quick(regression_mpnn_tri_quantile, dataloader):
+    print(regression_mpnn_tri_quantile)
+    trainer = pl.Trainer(
+        logger=False,
+        enable_checkpointing=False,
+        enable_progress_bar=False,
+        enable_model_summary=False,
+        accelerator="cpu",
+        devices=1,
+        fast_dev_run=True,
+    )
+    trainer.fit(regression_mpnn_tri_quantile, dataloader, None)

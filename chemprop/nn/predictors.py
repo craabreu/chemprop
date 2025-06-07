@@ -1,4 +1,5 @@
 from abc import abstractmethod
+from enum import auto
 
 from lightning.pytorch.core.mixins import HyperparametersMixin
 import torch
@@ -20,9 +21,10 @@ from chemprop.nn.metrics import (
     MulticlassMCCMetric,
     MVELoss,
     QuantileLoss,
+    TriquantileLoss,
 )
 from chemprop.nn.transforms import UnscaleTransform
-from chemprop.utils import ClassRegistry, Factory
+from chemprop.utils import ClassRegistry, EnumMapping, Factory
 
 __all__ = [
     "Predictor",
@@ -36,6 +38,7 @@ __all__ = [
     "MulticlassClassificationFFN",
     "MulticlassDirichletFFN",
     "SpectralFFN",
+    "TriquantileFFN",
 ]
 
 
@@ -223,6 +226,48 @@ class QuantileFFN(RegressionFFN):
         interval = upper_bound - lower_bound
 
         return torch.stack((mean, interval), dim=2)
+
+    train_step = forward
+
+
+class TriquantileScheme(EnumMapping):
+    FREE = auto()
+    OFFSETS = auto()
+    HALFWIDTH_AND_SKEWNESS = auto()
+
+
+@PredictorRegistry.register("regression-triquantile")
+class TriquantileFFN(RegressionFFN):
+    n_targets = 3
+    _T_default_criterion = TriquantileLoss
+
+    def __init__(self, scheme: TriquantileScheme = TriquantileScheme.OFFSETS, *args, **kwargs):
+        self.scheme = scheme
+        super().__init__(*args, **kwargs)
+
+    def forward(self, Z: Tensor) -> Tensor:
+        match self.scheme:
+            case TriquantileScheme.FREE:
+                median, lower_quantile, upper_quantile = torch.chunk(self.ffn(Z), self.n_targets, dim=1)
+            case TriquantileScheme.OFFSETS:
+                median, offset_down, offset_up = torch.chunk(self.ffn(Z), self.n_targets, dim=1)
+                lower_quantile = median - F.softplus(offset_down)
+                upper_quantile = median + F.softplus(offset_up)
+            case TriquantileScheme.HALFWIDTH_AND_SKEWNESS:
+                median, log_halfwidth, atanh_skewness = torch.chunk(self.ffn(Z), self.n_targets, dim=1)
+                halfwidth = log_halfwidth.exp()
+                skewness = atanh_skewness.tanh()
+                midpoint = median + skewness * halfwidth
+                lower_quantile = midpoint - halfwidth
+                upper_quantile = midpoint + halfwidth
+            case _:
+                raise ValueError(f"Unknown triquantile scheme: {self.scheme}")
+
+        median = self.output_transform(median)
+        lower_quantile = self.output_transform(lower_quantile)
+        upper_quantile = self.output_transform(upper_quantile)
+
+        return torch.stack((median, lower_quantile, upper_quantile), dim=-1)
 
     train_step = forward
 

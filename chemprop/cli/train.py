@@ -67,6 +67,7 @@ from chemprop.nn.message_passing import (
 from chemprop.nn.transforms import GraphTransform, ScaleTransform, UnscaleTransform
 from chemprop.utils import Factory
 from chemprop.utils.utils import EnumMapping
+from chemprop.nn import TriquantileScheme
 
 logger = logging.getLogger(__name__)
 
@@ -449,6 +450,20 @@ def add_train_args(parser: ArgumentParser) -> ArgumentParser:
     train_args.add_argument(
         "--alpha", type=float, default=0.1, help="Target error bounds for quantile interval loss"
     )
+
+    triquantile_scheme_choices = {
+        member.name.lower().replace("_", "-"): member
+        for member in TriquantileScheme
+    }
+
+    train_args.add_argument(
+        "--triquantile-scheme",
+        default="offsets",
+        type=triquantile_scheme_choices.get,
+        choices=triquantile_scheme_choices,
+        help="Scheme for triquantile regression.",
+    )
+
     # TODO: Add in v2.1
     # train_args.add_argument(  # TODO: Is threshold the same thing as the spectra target floor? I'm not sure but combined them.
     #     "-T",
@@ -1016,6 +1031,7 @@ def summarize(
         "regression-mve",
         "regression-evidential",
         "regression-quantile",
+        "regression-triquantile",
     ]:
         y_mean = np.nanmean(y, axis=0)
         y_std = np.nanstd(y, axis=0)
@@ -1276,6 +1292,7 @@ def build_model(
             # threshold=args.threshold, TODO: Add in v2.1
             eps=args.eps,
             alpha=args.alpha,
+            scheme=args.triquantile_scheme,
         )
     else:
         criterion = None

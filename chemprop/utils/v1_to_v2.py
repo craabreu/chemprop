@@ -46,11 +46,16 @@ def get_ffn_info(model_v1_dict: dict) -> dict:
     data_scaler = model_v1_dict["data_scaler"]
 
     if loss_function == "quantile":
-        num_tasks = num_tasks // 2
+        n_layers = args_v1.ffn_num_layers
+        n_targets = len(model_v1_dict["state_dict"][f"readout.{n_layers * 3 - 2}.bias"])
+        if n_targets == 3:
+            loss_function = "triquantile"
+            predictor = "regression-triquantile"
+        num_tasks = num_tasks // n_targets
         if target_weights is not None:
-            target_weights = target_weights[0::2]
+            target_weights = target_weights[0::n_targets]
         if data_scaler is not None:
-            data_scaler = {k: v[0::2] for k, v in data_scaler.items()}
+            data_scaler = {k: v[0::n_targets] for k, v in data_scaler.items()}
 
     if target_weights is not None:
         task_weights = torch.tensor(target_weights).unsqueeze(0)
@@ -59,12 +64,18 @@ def get_ffn_info(model_v1_dict: dict) -> dict:
 
     kwargs = {}
     loss_vars = {}
-    if loss_function == "quantile":
+    if loss_function in ["quantile", "triquantile"]:
         alpha = args_v1.quantile_loss_alpha
         q = alpha / 2
         kwargs["alpha"] = alpha
-        loss_vars["bounds"] = torch.tensor([-1 / 2, 1 / 2]).view(2, 1, 1)
-        loss_vars["tau"] = torch.tensor([[q, 1 - q], [q - 1, -q]]).view(2, 2, 1, 1)
+        if loss_function == "quantile":
+            bounds = torch.tensor([-1 / 2, 1 / 2]).view(2, 1, 1)
+            tau = torch.tensor([[q, 1 - q], [q - 1, -q]]).view(2, 2, 1, 1)
+        else:
+            bounds = torch.tensor([-1 / 2, 0, 1 / 2]).view(3, 1, 1)
+            tau = torch.tensor([[q, 0, 1 - q], [q / 2, -1, -q / 2]]).view(3, 2, 1, 1)
+        loss_vars["bounds"] = bounds
+        loss_vars["tau"] = tau
     elif loss_function in ["evidential", "dirichlet"]:
         kwargs["v_kl"] = args_v1.evidential_regularization
 

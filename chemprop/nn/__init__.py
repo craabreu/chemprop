@@ -44,6 +44,7 @@ from .metrics import (
     MVELoss,
     QuantileLoss,
     R2Score,
+    TriquantileLoss,
     Wasserstein,
 )
 from .predictors import (
@@ -59,6 +60,8 @@ from .predictors import (
     QuantileFFN,
     RegressionFFN,
     SpectralFFN,
+    TriquantileScheme,
+    TriquantileFFN,
 )
 from .transforms import GraphTransform, ScaleTransform, UnscaleTransform
 from .utils import Activation
@@ -132,4 +135,7 @@ __all__ = [
     "GraphTransform",
     "ScaleTransform",
     "UnscaleTransform",
+    "TriquantileLoss",
+    "TriquantileFFN",
+    "TriquantileScheme",
 ]
