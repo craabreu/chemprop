@@ -60,8 +60,8 @@ from .predictors import (
     QuantileFFN,
     RegressionFFN,
     SpectralFFN,
-    TriquantileScheme,
     TriquantileFFN,
+    TriquantileScheme,
 )
 from .transforms import GraphTransform, ScaleTransform, UnscaleTransform
 from .utils import Activation

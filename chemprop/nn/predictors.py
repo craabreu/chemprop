@@ -248,13 +248,17 @@ class TriquantileFFN(RegressionFFN):
     def forward(self, Z: Tensor) -> Tensor:
         match self.scheme:
             case TriquantileScheme.FREE:
-                median, lower_quantile, upper_quantile = torch.chunk(self.ffn(Z), self.n_targets, dim=1)
+                median, lower_quantile, upper_quantile = torch.chunk(
+                    self.ffn(Z), self.n_targets, dim=1
+                )
             case TriquantileScheme.OFFSETS:
                 median, offset_down, offset_up = torch.chunk(self.ffn(Z), self.n_targets, dim=1)
                 lower_quantile = median - F.softplus(offset_down)
                 upper_quantile = median + F.softplus(offset_up)
             case TriquantileScheme.HALFWIDTH_AND_SKEWNESS:
-                median, log_halfwidth, atanh_skewness = torch.chunk(self.ffn(Z), self.n_targets, dim=1)
+                median, log_halfwidth, atanh_skewness = torch.chunk(
+                    self.ffn(Z), self.n_targets, dim=1
+                )
                 halfwidth = log_halfwidth.exp()
                 skewness = atanh_skewness.tanh()
                 midpoint = median + skewness * halfwidth

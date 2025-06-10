@@ -138,7 +138,9 @@ def test_quantile_quick(regression_mpnn_quantile, dataloader):
 
 
 @pytest.mark.parametrize(
-    "regression_mpnn_tri_quantile", [nn.BondMessagePassing(), nn.AtomMessagePassing()], indirect=True
+    "regression_mpnn_tri_quantile",
+    [nn.BondMessagePassing(), nn.AtomMessagePassing()],
+    indirect=True,
 )
 @pytest.mark.integration
 def test_tri_quantile_quick(regression_mpnn_tri_quantile, dataloader):
