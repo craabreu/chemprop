@@ -55,7 +55,13 @@ from chemprop.data import (
 from chemprop.data.datasets import _MolGraphDatasetMixin
 from chemprop.featurizers.atom import AtomFeatureMode
 from chemprop.models import MPNN, MolAtomBondMPNN, MulticomponentMPNN, save_model
-from chemprop.nn import AggregationRegistry, LossFunctionRegistry, MetricRegistry, PredictorRegistry
+from chemprop.nn import (
+    AggregationRegistry,
+    LossFunctionRegistry,
+    MetricRegistry,
+    PredictorRegistry,
+    TriquantileScheme,
+)
 from chemprop.nn.ffn import ConstrainerFFN
 from chemprop.nn.message_passing import (
     AtomMessagePassing,
@@ -67,7 +73,6 @@ from chemprop.nn.message_passing import (
 from chemprop.nn.transforms import GraphTransform, ScaleTransform, UnscaleTransform
 from chemprop.utils import Factory
 from chemprop.utils.utils import EnumMapping
-from chemprop.nn import TriquantileScheme
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +89,10 @@ _ACTIVATION_FUNCTIONS = OrderedDict(
     }
 )
 _ACTIVATION_FUNCTIONS.move_to_end("RELU", last=False)
+
+_TRIQUANTILE_SCHEME_CHOICES = {
+    member.name.replace("_", "-").lower(): member for member in TriquantileScheme
+}
 
 
 class FoundationModels(EnumMapping):
@@ -451,16 +460,10 @@ def add_train_args(parser: ArgumentParser) -> ArgumentParser:
         "--alpha", type=float, default=0.1, help="Target error bounds for quantile interval loss"
     )
 
-    triquantile_scheme_choices = {
-        member.name.lower().replace("_", "-"): member
-        for member in TriquantileScheme
-    }
-
     train_args.add_argument(
         "--triquantile-scheme",
         default="offsets",
-        type=triquantile_scheme_choices.get,
-        choices=triquantile_scheme_choices,
+        choices=list(_TRIQUANTILE_SCHEME_CHOICES.keys()),
         help="Scheme for triquantile regression.",
     )
 
@@ -1292,7 +1295,7 @@ def build_model(
             # threshold=args.threshold, TODO: Add in v2.1
             eps=args.eps,
             alpha=args.alpha,
-            scheme=args.triquantile_scheme,
+            scheme=_TRIQUANTILE_SCHEME_CHOICES[args.triquantile_scheme],
         )
     else:
         criterion = None
