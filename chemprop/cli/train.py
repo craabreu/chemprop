@@ -424,9 +424,7 @@ def add_train_args(parser: ArgumentParser) -> ArgumentParser:
         help="Name of the column in the input CSV file containing 'train', 'val', or 'test' for each row.",
     )
     train_data_args.add_argument(
-        "--no-progress-bar",
-        action="store_true",
-        help="Turn off the progress bar",
+        "--no-progress-bar", action="store_true", help="Turn off the progress bar"
     )
     # TODO: Add in v2.1
     # train_data_args.add_argument(

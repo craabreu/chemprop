@@ -25,12 +25,19 @@ from chemprop.cli.utils import (
 )
 from chemprop.models.utils import load_model, load_output_columns
 from chemprop.nn.metrics import BoundedMixin
-from chemprop.nn.predictors import EvidentialFFN, MulticlassClassificationFFN, MveFFN, QuantileFFN
+from chemprop.nn.predictors import (
+    EvidentialFFN,
+    MulticlassClassificationFFN,
+    MveFFN,
+    QuantileFFN,
+    TriquantileFFN,
+)
 from chemprop.uncertainty import (
     MVEWeightingCalibrator,
     NoUncertaintyEstimator,
     RegressionCalibrator,
     RegressionEvaluator,
+    TriquantileRegressionEstimator,
     UncertaintyCalibratorRegistry,
     UncertaintyEstimatorRegistry,
     UncertaintyEvaluatorRegistry,
@@ -291,15 +298,23 @@ def make_prediction_for_models(
     trainer = pl.Trainer(
         logger=False, enable_progress_bar=True, accelerator=args.accelerator, devices=args.devices
     )
-    test_individual_preds, test_individual_uncs = uncertainty_estimator(
-        test_loader, models, trainer
-    )
+    results = uncertainty_estimator(test_loader, models, trainer)
+    if isinstance(uncertainty_estimator, TriquantileRegressionEstimator):
+        test_individual_preds, test_individual_uncs, test_individual_skews = results
+    else:
+        test_individual_preds, test_individual_uncs = results
+        test_individual_skews = None
 
     test_preds = torch.mean(test_individual_preds, dim=0)
     if not isinstance(uncertainty_estimator, NoUncertaintyEstimator):
         test_uncs = torch.mean(test_individual_uncs, dim=0)
     else:
         test_uncs = None
+
+    if isinstance(uncertainty_estimator, TriquantileRegressionEstimator):
+        test_skews = torch.mean(test_individual_skews, dim=0)
+    else:
+        test_skews = None
 
     if args.calibration_method is not None:
         uncertainty_calibrator = Factory.build(
@@ -346,7 +361,7 @@ def make_prediction_for_models(
             logger.info(f"{evaluator.alias}: {metric_value.tolist()}")
 
     if args.uncertainty_method == "none" and (
-        isinstance(models[0].predictor, (MveFFN, EvidentialFFN, QuantileFFN))
+        isinstance(models[0].predictor, (MveFFN, EvidentialFFN, QuantileFFN, TriquantileFFN))
     ):
         test_preds = test_preds[..., 0]
         test_individual_preds = test_individual_preds[..., 0]
@@ -356,7 +371,9 @@ def make_prediction_for_models(
             f"pred_{i}" for i in range(test_preds.shape[1])
         ]  # TODO: need to improve this for cases like multi-task MVE and multi-task multiclass
 
-    save_predictions(args, models[0], output_columns, test_preds, test_uncs, output_path)
+    save_predictions(
+        args, models[0], output_columns, test_preds, test_uncs, test_skews, output_path
+    )
 
     if len(model_paths) > 1:
         save_individual_predictions(
@@ -366,12 +383,14 @@ def make_prediction_for_models(
             output_columns,
             test_individual_preds,
             test_individual_uncs,
+            test_individual_skews,
             output_path,
         )
 
 
-def save_predictions(args, model, output_columns, test_preds, test_uncs, output_path):
+def save_predictions(args, model, output_columns, test_preds, test_uncs, test_skews, output_path):
     unc_columns = [f"{col}_unc" for col in output_columns]
+    skew_columns = [f"{col}_skew" for col in output_columns]
 
     if isinstance(model.predictor, MulticlassClassificationFFN):
         output_columns = output_columns + [f"{col}_prob" for col in output_columns]
@@ -390,6 +409,8 @@ def save_predictions(args, model, output_columns, test_preds, test_uncs, output_
 
     if args.uncertainty_method not in ["none", "classification"]:
         df_test[unc_columns] = np.round(test_uncs, 6)
+        if test_skews is not None:
+            df_test[skew_columns] = np.round(test_skews, 6)
 
     if output_path.suffix == ".pkl":
         df_test = df_test.reset_index(drop=True)
@@ -406,10 +427,14 @@ def save_individual_predictions(
     output_columns,
     test_individual_preds,
     test_individual_uncs,
+    test_individual_skews,
     output_path,
 ):
     unc_columns = [
         f"{col}_unc_model_{i}" for i in range(len(model_paths)) for col in output_columns
+    ]
+    skew_columns = [
+        f"{col}_skew_model_{i}" for i in range(len(model_paths)) for col in output_columns
     ]
 
     if isinstance(model.predictor, MulticlassClassificationFFN):
@@ -443,6 +468,8 @@ def save_individual_predictions(
         m, n, t = test_individual_uncs.shape
         test_individual_uncs = np.transpose(test_individual_uncs, (1, 0, 2)).reshape(n, m * t)
         df_test[unc_columns] = np.round(test_individual_uncs, 6)
+        if test_individual_skews is not None:
+            df_test[skew_columns] = np.round(test_individual_skews, 6)
 
     output_path = output_path.parent / Path(
         str(args.output.stem) + "_individual" + str(output_path.suffix)

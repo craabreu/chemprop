@@ -27,6 +27,7 @@ from .estimator import (  # RoundRobinSpectraEstimator,
     MVEEstimator,
     NoUncertaintyEstimator,
     QuantileRegressionEstimator,
+    TriquantileRegressionEstimator,
     UncertaintyEstimator,
     UncertaintyEstimatorRegistry,
 )
@@ -89,6 +90,7 @@ __all__ = [
     "NoUncertaintyEstimator",
     "QuantileRegressionEstimator",
     # "RoundRobinSpectraEstimator",
+    "TriquantileRegressionEstimator",
     "UncertaintyEstimator",
     "UncertaintyEstimatorRegistry",
 ]

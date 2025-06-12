@@ -800,8 +800,8 @@ class MulticlassDirichletEstimator(UncertaintyEstimator):
         return torch.concat([Y, u], -1)
 
 
-@UncertaintyEstimatorRegistry.register("quantile-regression")
-class QuantileRegressionEstimator(UncertaintyEstimator):
+@UncertaintyEstimatorRegistry.register("triquantile-regression")
+class TriquantileRegressionEstimator(UncertaintyEstimator):
     def __call__(
         self,
         dataloader: DataLoader,
@@ -850,7 +850,7 @@ class QuantileRegressionEstimator(UncertaintyEstimator):
                 if stacked_preds.shape[-1] == 2:
                     mean, interval = stacked_preds.unbind(-1)
                     half_interval = interval / 2
-                    skewness = None
+                    skewness = torch.zeros_like(mean)
                 else:
                     median, lower_quantile, upper_quantile = stacked_preds.unbind(-1)
                     mean = (upper_quantile + lower_quantile) / 2
@@ -864,9 +864,23 @@ class QuantileRegressionEstimator(UncertaintyEstimator):
                 half_intervals.append(None)
                 skewnesses.append(None)
         if not_mol_atom_bond:
-            if skewnesses[0] is None:
-                return means[0], half_intervals[0]
             return means[0], half_intervals[0], skewnesses[0]
-        if all(sk is None for sk in skewnesses):
-            return means, half_intervals
         return means, half_intervals, skewnesses
+
+
+@UncertaintyEstimatorRegistry.register("quantile-regression")
+class QuantileRegressionEstimator(TriquantileRegressionEstimator):
+    def __call__(
+        self,
+        dataloader: DataLoader,
+        models: Iterable[MPNN] | Iterable[MolAtomBondMPNN],
+        trainer: pl.Trainer,
+    ) -> (
+        tuple[Tensor, Tensor]
+        | tuple[
+            tuple[Tensor | None, Tensor | None, Tensor | None],
+            tuple[Tensor | None, Tensor | None, Tensor | None],
+        ]
+    ):
+        means, half_intervals, _ = super().__call__(dataloader, models, trainer)
+        return means, half_intervals
