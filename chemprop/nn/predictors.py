@@ -10,6 +10,7 @@ from chemprop.conf import DEFAULT_HIDDEN_DIM
 from chemprop.nn.ffn import MLP
 from chemprop.nn.hparams import HasHParams
 from chemprop.nn.metrics import (
+    MAE,
     MSE,
     SID,
     BCELoss,
@@ -233,29 +234,52 @@ class QuantileFFN(RegressionFFN):
 class TriquantileScheme(EnumMapping):
     FREE = auto()
     OFFSETS = auto()
-    HALFWIDTH_AND_SKEWNESS = auto()
+    SKEWNESS = auto()
 
 
 @PredictorRegistry.register("regression-triquantile")
 class TriquantileFFN(RegressionFFN):
     n_targets = 3
     _T_default_criterion = TriquantileLoss
+    _T_default_metric = MAE
 
-    def __init__(self, scheme: TriquantileScheme = TriquantileScheme.OFFSETS, *args, **kwargs):
+    def __init__(
+        self,
+        n_tasks: int = 1,
+        input_dim: int = DEFAULT_HIDDEN_DIM,
+        hidden_dim: int = 300,
+        n_layers: int = 1,
+        dropout: float = 0.0,
+        activation: str | nn.Module = "relu",
+        criterion: ChempropMetric | None = None,
+        task_weights: Tensor | None = None,
+        threshold: float | None = None,
+        output_transform: UnscaleTransform | None = None,
+        scheme: TriquantileScheme = TriquantileScheme.OFFSETS,
+    ):
+        super().__init__(
+            n_tasks,
+            input_dim,
+            hidden_dim,
+            n_layers,
+            dropout,
+            activation,
+            criterion,
+            task_weights,
+            threshold,
+            output_transform,
+        )
         self.scheme = scheme
-        super().__init__(*args, **kwargs)
 
     def forward(self, Z: Tensor) -> Tensor:
         match self.scheme:
             case TriquantileScheme.FREE:
-                median, lower_quantile, upper_quantile = torch.chunk(
-                    self.ffn(Z), self.n_targets, dim=1
-                )
+                median, lower_quantile, upper_quantile = torch.chunk(self.ffn(Z), self.n_targets, 1)
             case TriquantileScheme.OFFSETS:
                 median, offset_down, offset_up = torch.chunk(self.ffn(Z), self.n_targets, dim=1)
                 lower_quantile = median - F.softplus(offset_down)
                 upper_quantile = median + F.softplus(offset_up)
-            case TriquantileScheme.HALFWIDTH_AND_SKEWNESS:
+            case TriquantileScheme.SKEWNESS:
                 median, log_halfwidth, atanh_skewness = torch.chunk(
                     self.ffn(Z), self.n_targets, dim=1
                 )

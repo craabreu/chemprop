@@ -90,9 +90,7 @@ _ACTIVATION_FUNCTIONS = OrderedDict(
 )
 _ACTIVATION_FUNCTIONS.move_to_end("RELU", last=False)
 
-_TRIQUANTILE_SCHEME_CHOICES = {
-    member.name.replace("_", "-").lower(): member for member in TriquantileScheme
-}
+_TRIQUANTILE_SCHEME_CHOICES = {member.name.lower(): member for member in TriquantileScheme}
 
 
 class FoundationModels(EnumMapping):
@@ -424,6 +422,11 @@ def add_train_args(parser: ArgumentParser) -> ArgumentParser:
     train_data_args.add_argument(
         "--splits-column",
         help="Name of the column in the input CSV file containing 'train', 'val', or 'test' for each row.",
+    )
+    train_data_args.add_argument(
+        "--no-progress-bar",
+        action="store_true",
+        help="Turn off the progress bar",
     )
     # TODO: Add in v2.1
     # train_data_args.add_argument(
@@ -1295,7 +1298,6 @@ def build_model(
             # threshold=args.threshold, TODO: Add in v2.1
             eps=args.eps,
             alpha=args.alpha,
-            scheme=_TRIQUANTILE_SCHEME_CHOICES[args.triquantile_scheme],
         )
     else:
         criterion = None
@@ -1316,6 +1318,7 @@ def build_model(
         task_weights=args.task_weights,
         n_classes=args.multiclass_num_classes,
         output_transform=output_transform,
+        scheme=_TRIQUANTILE_SCHEME_CHOICES[args.triquantile_scheme],
         # spectral_activation=args.spectral_activation, TODO: Add in v2.1
     )
 
@@ -1654,7 +1657,7 @@ def train_model(
 
         trainer = pl.Trainer(
             logger=trainer_logger,
-            enable_progress_bar=True,
+            enable_progress_bar=not args.no_progress_bar,
             accelerator=args.accelerator,
             devices=args.devices,
             max_epochs=args.epochs,
@@ -1671,7 +1674,7 @@ def train_model(
                 best_ckpt_path = trainer.checkpoint_callback.best_model_path
                 trainer = pl.Trainer(
                     logger=trainer_logger,
-                    enable_progress_bar=True,
+                    enable_progress_bar=not args.no_progress_bar,
                     accelerator=args.accelerator,
                     devices=1,
                 )
