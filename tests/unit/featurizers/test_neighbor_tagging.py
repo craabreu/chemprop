@@ -43,6 +43,25 @@ def test_neighbor_tagging_bond_stereo_only():
     assert describe_neighbor_tagging(tagged).splitlines()[-1] == "C1-C2 STEREOTRANS"
 
 
+@pytest.mark.parametrize(
+    "smiles,input_stereo,expected_stereo",
+    [
+        ("F/C=C/F", BondStereo.STEREOE, BondStereo.STEREOTRANS),
+        ("F/C=C\\F", BondStereo.STEREOZ, BondStereo.STEREOCIS),
+    ],
+)
+def test_neighbor_tagging_normalizes_ez_to_cis_trans(smiles, input_stereo, expected_stereo):
+    """E/Z-marked bonds are normalized to cis/trans after neighbor tagging."""
+    mol = Chem.MolFromSmiles(smiles)
+    input_bond = next(bond for bond in mol.GetBonds() if bond.GetBondType() == Chem.BondType.DOUBLE)
+    assert input_bond.GetStereo() == input_stereo
+
+    tagged = mol_with_neighbor_priority_tags(mol)
+    output_bond = next(bond for bond in tagged.GetBonds() if bond.GetBondType() == Chem.BondType.DOUBLE)
+    assert output_bond.GetStereo() == expected_stereo
+    assert output_bond.GetStereo() not in {BondStereo.STEREOE, BondStereo.STEREOZ}
+
+
 def test_neighbor_tagging_combined_atom_and_bond_stereo():
     """A molecule with atom and bond stereo receives both tag types consistently."""
     mol = Chem.MolFromSmiles("C[C@](O)(/C=C/O)N")
