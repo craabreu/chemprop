@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 from rdkit import Chem
 
+from chemprop.featurizers import SimpleMoleculeMolGraphFeaturizer
 from chemprop.featurizers.stereo.molgraph import (
     CHIRAL_CENTER_TAGS,
     NUM_NEIGHBOR_TAG_BITS,
@@ -286,6 +287,48 @@ def test_stereo_atoms_only_option_changes_behavior_on_non_stereogenic_molecule()
 
     assert np.any(graph_all_atoms.E[:, start:stop] != 0.0)
     np.testing.assert_array_equal(graph_all_atoms.E[:, start:stop].sum(axis=1), 1.0)
+
+
+def test_stereo_and_simple_match_on_non_stereo_molecule_except_neighbor_tag_bits():
+    """On non-stereo molecules, Stereo and Simple graphs match except inserted tag-bit columns."""
+    mol = Chem.MolFromSmiles("CCCO")
+    simple_featurizer = SimpleMoleculeMolGraphFeaturizer()
+    stereo_featurizer = StereoMoleculeMolGraphFeaturizer()
+
+    simple_graph = simple_featurizer(mol)
+    stereo_graph = stereo_featurizer(mol)
+
+    start = len(stereo_featurizer.bond_featurizer)
+    stop = start + NUM_NEIGHBOR_TAG_BITS
+
+    np.testing.assert_array_equal(stereo_graph.V, simple_graph.V)
+    np.testing.assert_array_equal(stereo_graph.edge_index, simple_graph.edge_index)
+    np.testing.assert_array_equal(stereo_graph.rev_edge_index, simple_graph.rev_edge_index)
+    np.testing.assert_array_equal(stereo_graph.E[:, :start], simple_graph.E)
+    np.testing.assert_array_equal(stereo_graph.E[:, start:stop], 0.0)
+
+
+def test_stereo_and_simple_match_on_non_stereo_molecule_with_extra_bond_features():
+    """With extra bond features, Stereo and Simple differ only by zeroed inserted tag bits."""
+    mol = Chem.MolFromSmiles("CCCO")
+    extra_bond_fdim = 3
+    bond_features_extra = np.random.rand(mol.GetNumBonds(), extra_bond_fdim).astype(np.single)
+
+    simple_featurizer = SimpleMoleculeMolGraphFeaturizer(extra_bond_fdim=extra_bond_fdim)
+    stereo_featurizer = StereoMoleculeMolGraphFeaturizer(extra_bond_fdim=extra_bond_fdim)
+
+    simple_graph = simple_featurizer(mol, bond_features_extra=bond_features_extra)
+    stereo_graph = stereo_featurizer(mol, bond_features_extra=bond_features_extra)
+
+    start = len(stereo_featurizer.bond_featurizer)
+    stop = start + NUM_NEIGHBOR_TAG_BITS
+
+    np.testing.assert_array_equal(stereo_graph.V, simple_graph.V)
+    np.testing.assert_array_equal(stereo_graph.edge_index, simple_graph.edge_index)
+    np.testing.assert_array_equal(stereo_graph.rev_edge_index, simple_graph.rev_edge_index)
+    np.testing.assert_array_equal(stereo_graph.E[:, :start], simple_graph.E[:, :start])
+    np.testing.assert_array_equal(stereo_graph.E[:, start:stop], 0.0)
+    np.testing.assert_array_equal(stereo_graph.E[:, stop:], simple_graph.E[:, start:])
 
 
 def test_stereo_atoms_only_default_matches_explicit_true():
