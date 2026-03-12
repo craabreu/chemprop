@@ -20,10 +20,7 @@ def test_neighbor_tagging_chiral_center_only():
     assert tagged.GetBoolProp("hasNeighborPriorityTags")
     assert center.GetChiralTag() == ChiralType.CHI_TETRAHEDRAL_CCW
 
-    assert (
-        describe_neighbor_tagging(tagged)
-        == "C1 O2:0 N3:1 C0:2 (CHI_TETRAHEDRAL_CCW)"
-    )
+    assert describe_neighbor_tagging(tagged) == "C1 O2:0 N3:1 C0:2 (CHI_TETRAHEDRAL_CCW)"
 
 
 def test_neighbor_tagging_bond_stereo_only():
@@ -57,7 +54,9 @@ def test_neighbor_tagging_normalizes_ez_to_cis_trans(smiles, input_stereo, expec
     assert input_bond.GetStereo() == input_stereo
 
     tagged = mol_with_neighbor_priority_tags(mol)
-    output_bond = next(bond for bond in tagged.GetBonds() if bond.GetBondType() == Chem.BondType.DOUBLE)
+    output_bond = next(
+        bond for bond in tagged.GetBonds() if bond.GetBondType() == Chem.BondType.DOUBLE
+    )
     assert output_bond.GetStereo() == expected_stereo
     assert output_bond.GetStereo() not in {BondStereo.STEREOE, BondStereo.STEREOZ}
 
@@ -141,14 +140,7 @@ def _to_tagged_nx_graph(mol):
     return graph
 
 
-@pytest.mark.parametrize(
-    "base_smiles",
-    [
-        "C[C@H](O)N",
-        "F/C=C/F",
-        "C[C@](O)(/C=C/O)N",
-    ],
-)
+@pytest.mark.parametrize("base_smiles", ["C[C@H](O)N", "F/C=C/F", "C[C@](O)(/C=C/O)N"])
 def test_neighbor_tagging_invariant_to_input_smiles_atom_order(base_smiles):
     """Tagging results are invariant under equivalent SMILES atom-order permutations."""
     base_mol = Chem.MolFromSmiles(base_smiles)
@@ -166,7 +158,9 @@ def test_neighbor_tagging_invariant_to_input_smiles_atom_order(base_smiles):
     reference = tagged_graphs[0]
 
     for graph in tagged_graphs[1:]:
-        assert nx.is_isomorphic(reference, graph, node_match=lambda a, b: a == b, edge_match=lambda a, b: a == b)
+        assert nx.is_isomorphic(
+            reference, graph, node_match=lambda a, b: a == b, edge_match=lambda a, b: a == b
+        )
 
 
 def test_heavy_neighbor_tags_match_for_implicit_vs_explicit_hydrogen():

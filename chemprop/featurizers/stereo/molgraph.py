@@ -1,13 +1,24 @@
+from dataclasses import dataclass
+
 import numpy as np
 from rdkit import Chem
+from rdkit.Chem.rdchem import BondStereo, ChiralType
 
 from chemprop.data.molgraph import MolGraph
 from chemprop.featurizers import SimpleMoleculeMolGraphFeaturizer
 from chemprop.featurizers.stereo.neighbor_tagging import mol_with_neighbor_priority_tags
 
 NUM_NEIGHBOR_TAG_BITS = 4
+CHIRAL_CENTER_TAGS = {ChiralType.CHI_TETRAHEDRAL_CW, ChiralType.CHI_TETRAHEDRAL_CCW}
+STEREOGENIC_BOND_TAGS = {
+    BondStereo.STEREOCIS,
+    BondStereo.STEREOTRANS,
+    BondStereo.STEREOZ,
+    BondStereo.STEREOE,
+}
 
 
+@dataclass
 class StereoMoleculeMolGraphFeaturizer(SimpleMoleculeMolGraphFeaturizer):
     """Featurizes molecules with asymmetric stereochemical information.
 
@@ -25,7 +36,12 @@ class StereoMoleculeMolGraphFeaturizer(SimpleMoleculeMolGraphFeaturizer):
     extra_bond_fdim : int, default=0
         the dimension of the additional features that will be concatenated onto the calculated
         features of each bond
+    stereo_atoms_only : bool, default=True
+        whether to encode neighbor-tag one-hots only on directed edges that converge to
+        stereochemistry-relevant atoms (chiral centers and atoms on stereo-tagged bonds)
     """
+
+    stereo_atoms_only: bool = True
 
     def __post_init__(self):
         super().__post_init__()
@@ -37,7 +53,6 @@ class StereoMoleculeMolGraphFeaturizer(SimpleMoleculeMolGraphFeaturizer):
         atom_features_extra: np.ndarray | None = None,
         bond_features_extra: np.ndarray | None = None,
     ) -> MolGraph:
-        mol = mol_with_neighbor_priority_tags(mol)
         num_extra_bond_feats = (
             len(bond_features_extra) if bond_features_extra is not None else mol.GetNumBonds()
         )
@@ -46,14 +61,39 @@ class StereoMoleculeMolGraphFeaturizer(SimpleMoleculeMolGraphFeaturizer):
             bond_features_extra = placeholder
         else:
             bond_features_extra = np.concatenate((placeholder, bond_features_extra), axis=1)
+
+        atoms_to_encode = self._get_atoms_to_encode(mol)
+        if not atoms_to_encode:
+            return super().__call__(mol, atom_features_extra, bond_features_extra)
+
+        mol = mol_with_neighbor_priority_tags(mol)
         mol_graph = super().__call__(mol, atom_features_extra, bond_features_extra)
+
         start = len(self.bond_featurizer)
         max_tag = NUM_NEIGHBOR_TAG_BITS - 1
-        for bond_idx, bond in enumerate(mol.GetBonds()):
-            begin_tag = int(bond.GetIntProp("beginAtomPriorityTag"))
-            end_tag = int(bond.GetIntProp("endAtomPriorityTag"))
-            forward_row = 2 * bond_idx
-            reverse_row = forward_row + 1
-            mol_graph.E[forward_row, start + min(end_tag, max_tag)] = 1.0
-            mol_graph.E[reverse_row, start + min(begin_tag, max_tag)] = 1.0
+        for bond in mol.GetBonds():
+            bond_idx = bond.GetIdx()
+            begin_idx, end_idx = bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()
+            if end_idx in atoms_to_encode:
+                end_tag = int(bond.GetIntProp("endAtomPriorityTag"))
+                forward_row = 2 * bond_idx
+                mol_graph.E[forward_row, start + min(end_tag, max_tag)] = 1.0
+            if begin_idx in atoms_to_encode:
+                begin_tag = int(bond.GetIntProp("beginAtomPriorityTag"))
+                reverse_row = 2 * bond_idx + 1
+                mol_graph.E[reverse_row, start + min(begin_tag, max_tag)] = 1.0
         return mol_graph
+
+    def _get_atoms_to_encode(self, mol: Chem.Mol) -> set[int]:
+        if self.stereo_atoms_only:
+            atoms_to_encode = {
+                atom.GetIdx()
+                for atom in mol.GetAtoms()
+                if atom.GetChiralTag() in CHIRAL_CENTER_TAGS
+            }
+            for bond in mol.GetBonds():
+                if bond.GetStereo() in STEREOGENIC_BOND_TAGS:
+                    atoms_to_encode.add(bond.GetBeginAtomIdx())
+                    atoms_to_encode.add(bond.GetEndAtomIdx())
+            return atoms_to_encode
+        return {atom.GetIdx() for atom in mol.GetAtoms()}
