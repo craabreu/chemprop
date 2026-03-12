@@ -128,9 +128,7 @@ def mol_with_neighbor_priority_tags(mol: Mol) -> Mol:
         stereo annotations adjusted to the local neighbor priority order.
     """
     mol = Mol(mol)
-    if mol.HasProp("hasNeighborPriorityTags") and mol.GetBoolProp(
-        "hasNeighborPriorityTags"
-    ):
+    if mol.HasProp("hasNeighborPriorityTags") and mol.GetBoolProp("hasNeighborPriorityTags"):
         return mol
 
     atom_ranks = CanonicalRankAtoms(mol, breakTies=False, includeAtomMaps=False)
@@ -140,9 +138,7 @@ def mol_with_neighbor_priority_tags(mol: Mol) -> Mol:
     neighbors: list[dict[int, int]] = []
 
     for atom in mol.GetAtoms():
-        neighbor_indices = np.fromiter(
-            (atom.GetIdx() for atom in atom.GetNeighbors()), dtype=int
-        )
+        neighbor_indices = np.fromiter((atom.GetIdx() for atom in atom.GetNeighbors()), dtype=int)
         neighbor_priorities = atom_priorities[neighbor_indices]
 
         # Tag = number of neighbors with strictly higher canonical atom rank.
@@ -150,10 +146,7 @@ def mol_with_neighbor_priority_tags(mol: Mol) -> Mol:
         neighbors.append(dict(zip(neighbor_indices, tags)))
 
         chiral_tag = atom.GetChiralTag()
-        if chiral_tag in {
-            ChiralType.CHI_TETRAHEDRAL_CW,
-            ChiralType.CHI_TETRAHEDRAL_CCW,
-        }:
+        if chiral_tag in {ChiralType.CHI_TETRAHEDRAL_CW, ChiralType.CHI_TETRAHEDRAL_CCW}:
             if is_odd_permutation(*tags):
                 atom.SetChiralTag(flip_chiral_tag(chiral_tag))
 
@@ -224,10 +217,7 @@ def describe_neighbor_tagging(mol: Mol, include_leaves: bool = False) -> str:
     C3-C4 STEREOTRANS
 
     """
-    if not (
-        mol.HasProp("hasNeighborPriorityTags")
-        and mol.GetBoolProp("hasNeighborPriorityTags")
-    ):
+    if not (mol.HasProp("hasNeighborPriorityTags") and mol.GetBoolProp("hasNeighborPriorityTags")):
         return "Molecule does not have neighbor priority tags."
 
     def atom_str(atom: Atom) -> str:

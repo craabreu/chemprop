@@ -5,7 +5,6 @@ from chemprop.data.molgraph import MolGraph
 from chemprop.featurizers import SimpleMoleculeMolGraphFeaturizer
 from chemprop.featurizers.stereo.neighbor_tagging import mol_with_neighbor_priority_tags
 
-
 NUM_NEIGHBOR_TAG_BITS = 4
 
 
@@ -40,26 +39,21 @@ class StereoMoleculeMolGraphFeaturizer(SimpleMoleculeMolGraphFeaturizer):
     ) -> MolGraph:
         mol = mol_with_neighbor_priority_tags(mol)
         num_extra_bond_feats = (
-            len(bond_features_extra)
-            if bond_features_extra is not None
-            else mol.GetNumBonds()
+            len(bond_features_extra) if bond_features_extra is not None else mol.GetNumBonds()
         )
-        placeholder = np.zeros(
-            (num_extra_bond_feats, NUM_NEIGHBOR_TAG_BITS), dtype=np.single
-        )
+        placeholder = np.zeros((num_extra_bond_feats, NUM_NEIGHBOR_TAG_BITS), dtype=np.single)
         if bond_features_extra is None:
             bond_features_extra = placeholder
         else:
-            bond_features_extra = np.concatenate(
-                (placeholder, bond_features_extra), axis=1
-            )
+            bond_features_extra = np.concatenate((placeholder, bond_features_extra), axis=1)
         mol_graph = super().__call__(mol, atom_features_extra, bond_features_extra)
         start = len(self.bond_featurizer)
+        max_tag = NUM_NEIGHBOR_TAG_BITS - 1
         for bond_idx, bond in enumerate(mol.GetBonds()):
             begin_tag = int(bond.GetIntProp("beginAtomPriorityTag"))
             end_tag = int(bond.GetIntProp("endAtomPriorityTag"))
             forward_row = 2 * bond_idx
             reverse_row = forward_row + 1
-            mol_graph.E[forward_row, start + min(end_tag, 3)] = 1.0
-            mol_graph.E[reverse_row, start + min(begin_tag, 3)] = 1.0
+            mol_graph.E[forward_row, start + min(end_tag, max_tag)] = 1.0
+            mol_graph.E[reverse_row, start + min(begin_tag, max_tag)] = 1.0
         return mol_graph
