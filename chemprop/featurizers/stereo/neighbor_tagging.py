@@ -39,7 +39,7 @@ def is_odd_permutation(i: int, j: int, k: int, m: int | None = None) -> bool:
     return bool(swaps % 2)
 
 
-def top_priority_neighbor(neighbors: dict[int, int], excluding: int) -> int:
+def top_priority(neighbors: dict[int, int], excluding: int) -> int:
     """Return the top-priority neighbor, excluding a given neighbor from consideration.
 
     Returns
@@ -51,8 +51,8 @@ def top_priority_neighbor(neighbors: dict[int, int], excluding: int) -> int:
     return min(subset.keys(), key=subset.get)
 
 
-def normalize_stereo(stereo: BondStereo) -> BondStereo:
-    """Return the normalized stereochemistry flag of a bond."""
+def normalize_stereo_to_cis_or_trans(stereo: BondStereo) -> BondStereo:
+    """Return the normalized stereochemistry flag of a bond, converting Z/E to cis/trans."""
     if stereo == BondStereo.STEREOZ:
         return BondStereo.STEREOCIS
     if stereo == BondStereo.STEREOE:
@@ -171,12 +171,12 @@ def mol_with_neighbor_priority_tags(mol: Mol) -> Mol:
         stereo = bond.GetStereo()
         if stereo in STEREOGENIC_BOND_TAGS:
             stereo_left, stereo_right = bond.GetStereoAtoms()
-            top_left = top_priority_neighbor(neighbors[begin], end)
-            top_right = top_priority_neighbor(neighbors[end], begin)
+            top_left = top_priority(neighbors[begin], excluding=end)
+            top_right = top_priority(neighbors[end], excluding=begin)
             if (stereo_left == top_left) != (stereo_right == top_right):
                 bond.SetStereo(flip_stereo(stereo))
             elif stereo in {BondStereo.STEREOZ, BondStereo.STEREOE}:
-                bond.SetStereo(normalize_stereo(stereo))
+                bond.SetStereo(normalize_stereo_to_cis_or_trans(stereo))
             bond.SetStereoAtoms(int(top_left), int(top_right))
 
     mol.SetBoolProp("hasNeighborPriorityTags", True)
