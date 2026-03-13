@@ -23,6 +23,7 @@ from .molgraph import (
     RxnMode,
     SimpleMoleculeMolGraphFeaturizer,
 )
+from .stereo.molgraph import StereoMolGraphFeaturizer
 
 __all__ = [
     "Featurizer",
@@ -41,6 +42,7 @@ __all__ = [
     "BatchCuikMolGraph",
     "CondensedGraphOfReactionFeaturizer",
     "CuikmolmakerMolGraphFeaturizer",
+    "StereoMolGraphFeaturizer",
     "CGRFeaturizer",
     "RxnMode",
     "MoleculeFeaturizer",

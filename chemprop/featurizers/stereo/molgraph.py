@@ -17,7 +17,7 @@ HOT_ONE: np.single = np.single(1.0)
 
 
 @dataclass
-class StereoMoleculeMolGraphFeaturizer(SimpleMoleculeMolGraphFeaturizer):
+class StereoMolGraphFeaturizer(SimpleMoleculeMolGraphFeaturizer):
     """Featurizes molecules with asymmetric stereochemical information.
 
     Parameters
