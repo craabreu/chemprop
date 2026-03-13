@@ -6,6 +6,7 @@ from rdkit.Chem.rdchem import BondStereo, ChiralType
 from chemprop.featurizers.stereo.neighbor_tagging import (
     describe_neighbor_tagging,
     mol_with_neighbor_priority_tags,
+    normalize_chiral_tags_to_ccw,
 )
 
 
@@ -207,3 +208,152 @@ def test_heavy_neighbor_tags_match_for_implicit_vs_explicit_hydrogen():
             explicit_heavy_neighbor_tags[neighbor.GetAtomicNum()] = tag
 
     assert implicit_heavy_neighbor_tags == explicit_heavy_neighbor_tags
+
+
+def _neighbor_priority_tags_at_atom(mol, atom_idx):
+    tags = []
+    for bond in mol.GetAtomWithIdx(atom_idx).GetBonds():
+        if bond.GetBeginAtomIdx() == atom_idx:
+            tags.append(int(bond.GetIntProp("endAtomPriorityTag")))
+        else:
+            tags.append(int(bond.GetIntProp("beginAtomPriorityTag")))
+    return tags
+
+
+def _bond_priority_snapshot(mol):
+    return {
+        bond.GetIdx(): (
+            int(bond.GetIntProp("beginAtomPriorityTag")),
+            int(bond.GetIntProp("endAtomPriorityTag")),
+        )
+        for bond in mol.GetBonds()
+    }
+
+
+def _bond_stereo_snapshot(mol):
+    return {
+        bond.GetIdx(): (bond.GetStereo(), tuple(int(i) for i in bond.GetStereoAtoms()))
+        for bond in mol.GetBonds()
+    }
+
+
+def test_normalize_chiral_tags_to_ccw_requires_neighbor_priority_tags():
+    """Normalization requires precomputed neighbor-priority tags."""
+    mol = Chem.MolFromSmiles("C[C@H](O)N")
+
+    with pytest.raises(ValueError, match="does not have neighbor priority tags"):
+        normalize_chiral_tags_to_ccw(mol)
+
+
+def test_normalize_chiral_tags_to_ccw_converts_cw_center_and_preserves_tag_multiset():
+    """Converting CW to CCW should only permute local neighbor-priority tags."""
+    mol = mol_with_neighbor_priority_tags(Chem.MolFromSmiles("C[C@H](O)N"))
+    center = next(
+        atom for atom in mol.GetAtoms() if atom.GetChiralTag() != ChiralType.CHI_UNSPECIFIED
+    )
+    center_idx = center.GetIdx()
+
+    tags_before = sorted(_neighbor_priority_tags_at_atom(mol, center_idx))
+    center.SetChiralTag(ChiralType.CHI_TETRAHEDRAL_CW)
+
+    normalize_chiral_tags_to_ccw(mol)
+
+    assert mol.GetAtomWithIdx(center_idx).GetChiralTag() == ChiralType.CHI_TETRAHEDRAL_CCW
+    tags_after = sorted(_neighbor_priority_tags_at_atom(mol, center_idx))
+    assert tags_after == tags_before
+
+
+def test_normalize_chiral_tags_to_ccw_keeps_existing_ccw_center_unchanged():
+    """Existing CCW centers should remain unchanged after normalization."""
+    mol = mol_with_neighbor_priority_tags(Chem.MolFromSmiles("C[C@H](O)N"))
+    center = next(
+        atom for atom in mol.GetAtoms() if atom.GetChiralTag() != ChiralType.CHI_UNSPECIFIED
+    )
+    center_idx = center.GetIdx()
+    tags_before = _neighbor_priority_tags_at_atom(mol, center_idx)
+    before_desc = describe_neighbor_tagging(mol, include_leaves=True)
+
+    normalize_chiral_tags_to_ccw(mol)
+
+    assert mol.GetAtomWithIdx(center_idx).GetChiralTag() == ChiralType.CHI_TETRAHEDRAL_CCW
+    assert _neighbor_priority_tags_at_atom(mol, center_idx) == tags_before
+    assert describe_neighbor_tagging(mol, include_leaves=True) == before_desc
+
+
+def test_normalize_chiral_tags_to_ccw_is_idempotent_after_first_pass():
+    """Applying chiral-tag normalization twice leaves the molecule unchanged on pass two."""
+    mol = mol_with_neighbor_priority_tags(Chem.MolFromSmiles("C[C@H](O)N"))
+    center = next(
+        atom for atom in mol.GetAtoms() if atom.GetChiralTag() != ChiralType.CHI_UNSPECIFIED
+    )
+    center.SetChiralTag(ChiralType.CHI_TETRAHEDRAL_CW)
+
+    normalize_chiral_tags_to_ccw(mol)
+    first_desc = describe_neighbor_tagging(mol, include_leaves=True)
+    first_bond_tags = _bond_priority_snapshot(mol)
+
+    normalize_chiral_tags_to_ccw(mol)
+    second_desc = describe_neighbor_tagging(mol, include_leaves=True)
+    second_bond_tags = _bond_priority_snapshot(mol)
+
+    assert second_desc == first_desc
+    assert second_bond_tags == first_bond_tags
+
+
+def test_normalize_chiral_tags_to_ccw_handles_multiple_centers_independently():
+    """Each tetrahedral center is normalized to CCW while preserving its local tag multiset."""
+    mol = mol_with_neighbor_priority_tags(Chem.MolFromSmiles("F[C@H](Cl)[C@H](Br)I"))
+    centers = [
+        atom.GetIdx()
+        for atom in mol.GetAtoms()
+        if atom.GetChiralTag() != ChiralType.CHI_UNSPECIFIED
+    ]
+    assert len(centers) == 2
+
+    tags_before = {idx: sorted(_neighbor_priority_tags_at_atom(mol, idx)) for idx in centers}
+    mol.GetAtomWithIdx(centers[0]).SetChiralTag(ChiralType.CHI_TETRAHEDRAL_CW)
+    mol.GetAtomWithIdx(centers[1]).SetChiralTag(ChiralType.CHI_TETRAHEDRAL_CCW)
+
+    normalize_chiral_tags_to_ccw(mol)
+
+    for idx in centers:
+        assert mol.GetAtomWithIdx(idx).GetChiralTag() == ChiralType.CHI_TETRAHEDRAL_CCW
+        assert sorted(_neighbor_priority_tags_at_atom(mol, idx)) == tags_before[idx]
+
+
+def test_normalize_chiral_tags_to_ccw_only_changes_bonds_incident_to_converted_center():
+    """Only bonds touching converted CW centers may have their endpoint priority tags updated."""
+    mol = mol_with_neighbor_priority_tags(Chem.MolFromSmiles("C[C@H](O)N"))
+    center = next(
+        atom for atom in mol.GetAtoms() if atom.GetChiralTag() != ChiralType.CHI_UNSPECIFIED
+    )
+    center_idx = center.GetIdx()
+    center.SetChiralTag(ChiralType.CHI_TETRAHEDRAL_CW)
+
+    before = _bond_priority_snapshot(mol)
+    incident = {bond.GetIdx() for bond in mol.GetAtomWithIdx(center_idx).GetBonds()}
+
+    normalize_chiral_tags_to_ccw(mol)
+
+    after = _bond_priority_snapshot(mol)
+    changed = {bond_idx for bond_idx in before if before[bond_idx] != after[bond_idx]}
+
+    assert changed
+    assert changed.issubset(incident)
+    for bond_idx in before:
+        if bond_idx not in incident:
+            assert after[bond_idx] == before[bond_idx]
+
+
+def test_normalize_chiral_tags_to_ccw_does_not_modify_bond_stereo_annotations():
+    """Chiral-tag normalization does not alter bond stereo flags or stereo-atom assignments."""
+    mol = mol_with_neighbor_priority_tags(Chem.MolFromSmiles("C[C@](O)(/C=C/O)N"))
+    center = next(
+        atom for atom in mol.GetAtoms() if atom.GetChiralTag() != ChiralType.CHI_UNSPECIFIED
+    )
+    center.SetChiralTag(ChiralType.CHI_TETRAHEDRAL_CW)
+    stereo_before = _bond_stereo_snapshot(mol)
+
+    normalize_chiral_tags_to_ccw(mol)
+
+    assert _bond_stereo_snapshot(mol) == stereo_before

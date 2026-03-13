@@ -122,6 +122,23 @@ def mol_with_neighbor_priority_tags(mol: Mol) -> Mol:
     rdkit.Chem.Mol
         A copy of the molecule with annotated neighbor priority tags and
         stereo annotations adjusted to the local neighbor priority order.
+
+    Example
+    -------
+    >>> from rdkit import Chem
+    >>> mol = Chem.MolFromSmiles("C[C@H](O)N")
+    >>> tagged = mol_with_neighbor_priority_tags(mol)
+    >>> tagged.GetBoolProp("hasNeighborPriorityTags")
+    True
+    >>> center = next(
+    ...     atom
+    ...     for atom in tagged.GetAtoms()
+    ...     if atom.GetChiralTag() != ChiralType.CHI_UNSPECIFIED
+    ... )
+    >>> center.GetChiralTag().name
+    'CHI_TETRAHEDRAL_CCW'
+    >>> describe_neighbor_tagging(tagged)
+    'C1 O2:0 N3:1 C0:2 (CHI_TETRAHEDRAL_CCW)'
     """
     mol = Mol(mol)
     if mol.HasProp("hasNeighborPriorityTags") and mol.GetBoolProp("hasNeighborPriorityTags"):
@@ -164,6 +181,67 @@ def mol_with_neighbor_priority_tags(mol: Mol) -> Mol:
 
     mol.SetBoolProp("hasNeighborPriorityTags", True)
     return mol
+
+
+def normalize_chiral_tags_to_ccw(mol: Mol) -> None:
+    """Modify a molecule in place by normalizing tetrahedral chiral tags to CCW.
+
+    This function converts all tetrahedral stereocenters tagged as
+    ``CHI_TETRAHEDRAL_CW`` to ``CHI_TETRAHEDRAL_CCW`` while preserving the
+    stereochemical meaning encoded by the local neighbor priority tags.
+
+    The function assumes that the molecule has already been processed by
+    :func:`mol_with_neighbor_priority_tags`.
+
+    When a stereocenter is tagged ``CHI_TETRAHEDRAL_CW``, its orientation is
+    reversed by swapping the priority tags of the two top-priority neighbors.
+    This corresponds to reversing the permutation parity of the neighbor ordering.
+    After this adjustment, the atom's chiral tag is set to ``CHI_TETRAHEDRAL_CCW``.
+
+    Parameters
+    ----------
+    mol : rdkit.Chem.Mol
+        Molecule whose tetrahedral chiral tags are normalized.
+
+    Raises
+    ------
+    ValueError
+        If the molecule does not have neighbor priority tags assigned.
+
+    Example
+    -------
+    >>> from rdkit import Chem
+    >>> raw = Chem.MolFromSmiles("C[C@H](O)N")
+    >>> normalize_chiral_tags_to_ccw(raw)
+    Traceback (most recent call last):
+    ...
+    ValueError: Molecule does not have neighbor priority tags.
+    >>> mol = mol_with_neighbor_priority_tags(raw)
+    >>> center = next(
+    ...     atom
+    ...     for atom in mol.GetAtoms()
+    ...     if atom.GetChiralTag() != ChiralType.CHI_UNSPECIFIED
+    ... )
+    >>> center.SetChiralTag(ChiralType.CHI_TETRAHEDRAL_CW)
+    >>> normalize_chiral_tags_to_ccw(mol)
+    >>> center.GetChiralTag().name
+    'CHI_TETRAHEDRAL_CCW'
+    """
+    if not (mol.HasProp("hasNeighborPriorityTags") and mol.GetBoolProp("hasNeighborPriorityTags")):
+        raise ValueError("Molecule does not have neighbor priority tags.")
+
+    for atom in mol.GetAtoms():
+        if atom.GetChiralTag() == ChiralType.CHI_TETRAHEDRAL_CW:
+            idx = atom.GetIdx()
+            for bond in atom.GetBonds():
+                begin = bond.GetBeginAtomIdx()
+                endpoint = "end" if begin == idx else "begin"
+                label = f"{endpoint}AtomPriorityTag"
+                tag = bond.GetIntProp(label)
+                if tag < 2:
+                    bond.SetIntProp(label, 1 - tag)
+
+            atom.SetChiralTag(ChiralType.CHI_TETRAHEDRAL_CCW)
 
 
 def describe_neighbor_tagging(mol: Mol, include_leaves: bool = False) -> str:
