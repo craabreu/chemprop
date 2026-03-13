@@ -2,6 +2,14 @@ import numpy as np
 from rdkit.Chem.rdchem import Atom, BondStereo, ChiralType, Mol
 from rdkit.Chem.rdmolfiles import CanonicalRankAtoms
 
+CHIRAL_CENTER_TAGS = {ChiralType.CHI_TETRAHEDRAL_CW, ChiralType.CHI_TETRAHEDRAL_CCW}
+STEREOGENIC_BOND_TAGS = {
+    BondStereo.STEREOCIS,
+    BondStereo.STEREOTRANS,
+    BondStereo.STEREOZ,
+    BondStereo.STEREOE,
+}
+
 
 def is_odd_permutation(i: int, j: int, k: int, m: int | None = None) -> bool:
     r"""Return whether the permutation parity is odd.
@@ -31,28 +39,16 @@ def is_odd_permutation(i: int, j: int, k: int, m: int | None = None) -> bool:
     return bool(swaps % 2)
 
 
-def has_minimum_value(key: int, among: dict[int, int], excluding: int) -> bool:
-    """Return whether a given key has the minimum value among those in a dictionary, excluding
-    another key from the dictionary.
-
-    Assumes the given key is present in the dictionary.
-
-    Parameters
-    ----------
-    key : int
-        The key whose value is to be checked.
-    among : dict[int, int]
-        The dictionary of values to check.
-    excluding : int
-        The key to exclude from consideration.
+def top_priority_neighbor(neighbors: dict[int, int], excluding: int) -> int:
+    """Return the top-priority neighbor, excluding a given neighbor from consideration.
 
     Returns
     -------
-    bool
-        ``True`` if the key has the minimum value, ``False`` otherwise.
+    int
+        The top-priority neighbor, except for the excluded neighbor.
     """
-    value = among[key]
-    return all(v >= value for k, v in among.items() if k != excluding)
+    subset = {k: v for k, v in neighbors.items() if k != excluding}
+    return min(subset.keys(), key=subset.get)
 
 
 def normalize_stereo(stereo: BondStereo) -> BondStereo:
@@ -146,7 +142,7 @@ def mol_with_neighbor_priority_tags(mol: Mol) -> Mol:
         neighbors.append(dict(zip(neighbor_indices, tags)))
 
         chiral_tag = atom.GetChiralTag()
-        if chiral_tag in {ChiralType.CHI_TETRAHEDRAL_CW, ChiralType.CHI_TETRAHEDRAL_CCW}:
+        if chiral_tag in CHIRAL_CENTER_TAGS:
             if is_odd_permutation(*tags):
                 atom.SetChiralTag(flip_chiral_tag(chiral_tag))
 
@@ -156,23 +152,15 @@ def mol_with_neighbor_priority_tags(mol: Mol) -> Mol:
         bond.SetIntProp("beginAtomPriorityTag", int(neighbors[end][begin]))
 
         stereo = bond.GetStereo()
-        if stereo in {
-            BondStereo.STEREOCIS,
-            BondStereo.STEREOTRANS,
-            BondStereo.STEREOZ,
-            BondStereo.STEREOE,
-        }:
-            left, right = bond.GetStereoAtoms()
-            left_has_highest_priority = has_minimum_value(
-                left, among=neighbors[begin], excluding=end
-            )
-            right_has_highest_priority = has_minimum_value(
-                right, among=neighbors[end], excluding=begin
-            )
-            if left_has_highest_priority != right_has_highest_priority:
+        if stereo in STEREOGENIC_BOND_TAGS:
+            stereo_left, stereo_right = bond.GetStereoAtoms()
+            top_left = top_priority_neighbor(neighbors[begin], end)
+            top_right = top_priority_neighbor(neighbors[end], begin)
+            if (stereo_left == top_left) != (stereo_right == top_right):
                 bond.SetStereo(flip_stereo(stereo))
             elif stereo in {BondStereo.STEREOZ, BondStereo.STEREOE}:
                 bond.SetStereo(normalize_stereo(stereo))
+            bond.SetStereoAtoms(int(top_left), int(top_right))
 
     mol.SetBoolProp("hasNeighborPriorityTags", True)
     return mol

@@ -2,20 +2,16 @@ from dataclasses import dataclass
 
 import numpy as np
 from rdkit import Chem
-from rdkit.Chem.rdchem import BondStereo, ChiralType
 
 from chemprop.data.molgraph import MolGraph
 from chemprop.featurizers import SimpleMoleculeMolGraphFeaturizer
-from chemprop.featurizers.stereo.neighbor_tagging import mol_with_neighbor_priority_tags
+from chemprop.featurizers.stereo.neighbor_tagging import (
+    CHIRAL_CENTER_TAGS,
+    STEREOGENIC_BOND_TAGS,
+    mol_with_neighbor_priority_tags,
+)
 
 NUM_NEIGHBOR_TAG_BITS = 4
-CHIRAL_CENTER_TAGS = {ChiralType.CHI_TETRAHEDRAL_CW, ChiralType.CHI_TETRAHEDRAL_CCW}
-STEREOGENIC_BOND_TAGS = {
-    BondStereo.STEREOCIS,
-    BondStereo.STEREOTRANS,
-    BondStereo.STEREOZ,
-    BondStereo.STEREOE,
-}
 
 
 @dataclass
