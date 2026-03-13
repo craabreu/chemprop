@@ -11,7 +11,8 @@ from chemprop.featurizers.stereo.neighbor_tagging import (
     mol_with_neighbor_priority_tags,
 )
 
-NUM_NEIGHBOR_TAG_BITS = 4
+NUM_NEIGHBOR_TAG_BITS: int = 4
+HOT_ONE: np.single = np.single(1.0)
 
 
 @dataclass
@@ -62,22 +63,22 @@ class StereoMoleculeMolGraphFeaturizer(SimpleMoleculeMolGraphFeaturizer):
         if not atoms_to_encode:
             return super().__call__(mol, atom_features_extra, bond_features_extra)
 
-        mol = mol_with_neighbor_priority_tags(mol)
-        mol_graph = super().__call__(mol, atom_features_extra, bond_features_extra)
+        mol_with_tags = mol_with_neighbor_priority_tags(mol)
+        mol_graph = super().__call__(mol_with_tags, atom_features_extra, bond_features_extra)
 
         start = len(self.bond_featurizer)
         max_tag = NUM_NEIGHBOR_TAG_BITS - 1
-        for bond in mol.GetBonds():
+        for bond in mol_with_tags.GetBonds():
             bond_idx = bond.GetIdx()
             begin_idx, end_idx = bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()
             if end_idx in atoms_to_encode:
                 end_tag = int(bond.GetIntProp("endAtomPriorityTag"))
                 forward_row = 2 * bond_idx
-                mol_graph.E[forward_row, start + min(end_tag, max_tag)] = 1.0
+                mol_graph.E[forward_row, start + min(end_tag, max_tag)] = HOT_ONE
             if begin_idx in atoms_to_encode:
                 begin_tag = int(bond.GetIntProp("beginAtomPriorityTag"))
                 reverse_row = 2 * bond_idx + 1
-                mol_graph.E[reverse_row, start + min(begin_tag, max_tag)] = 1.0
+                mol_graph.E[reverse_row, start + min(begin_tag, max_tag)] = HOT_ONE
         return mol_graph
 
     def _get_atoms_to_encode(self, mol: Chem.Mol) -> set[int]:
