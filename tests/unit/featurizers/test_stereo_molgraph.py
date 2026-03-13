@@ -24,9 +24,9 @@ def _encode_neighbor_tag(tag):
 
 def _expected_tag_for_directed_edge(bond, source_atom_idx):
     if source_atom_idx == bond.GetBeginAtomIdx():
-        return int(bond.GetIntProp("endAtomPriorityTag"))
+        return int(bond.GetIntProp("beginAtomPriorityTag"))
 
-    return int(bond.GetIntProp("beginAtomPriorityTag"))
+    return int(bond.GetIntProp("endAtomPriorityTag"))
 
 
 def _stereo_target_atoms(mol):
@@ -202,10 +202,10 @@ def test_stereo_bond_extra_features_are_appended_by_feature_dimension(mol):
         begin_tag = int(bond.GetIntProp("beginAtomPriorityTag"))
         end_tag = int(bond.GetIntProp("endAtomPriorityTag"))
         np.testing.assert_array_equal(
-            mol_graph.E[2 * bond_idx, start:stop], _encode_neighbor_tag(end_tag)
+            mol_graph.E[2 * bond_idx, start:stop], _encode_neighbor_tag(begin_tag)
         )
         np.testing.assert_array_equal(
-            mol_graph.E[2 * bond_idx + 1, start:stop], _encode_neighbor_tag(begin_tag)
+            mol_graph.E[2 * bond_idx + 1, start:stop], _encode_neighbor_tag(end_tag)
         )
 
     np.testing.assert_allclose(mol_graph.E[::2, stop:], bond_features_extra)
@@ -251,10 +251,7 @@ def test_stereo_neighbor_tag_bucket_for_tag_three_maps_to_last_bit():
         dst = int(dst)
         bond = tagged_mol.GetBondBetweenAtoms(src, dst)
         assert bond is not None
-        if src == bond.GetBeginAtomIdx():
-            expected_tag = int(bond.GetIntProp("endAtomPriorityTag"))
-        else:
-            expected_tag = int(bond.GetIntProp("beginAtomPriorityTag"))
+        expected_tag = _expected_tag_for_directed_edge(bond, src)
 
         if expected_tag == 3:
             found_tag_three = True
@@ -263,8 +260,8 @@ def test_stereo_neighbor_tag_bucket_for_tag_three_maps_to_last_bit():
     assert found_tag_three
 
 
-def test_stereo_neighbor_tag_bits_match_destination_tags_via_edge_index():
-    """Tag one-hots on directed edges match destination neighbor tags from edge_index."""
+def test_stereo_neighbor_tag_bits_match_source_neighbor_tags_via_edge_index():
+    """Tag one-hots on directed edges match source-neighbor tags from edge_index."""
     mol = Chem.MolFromSmiles("C[C@](F)(Cl)Br")
     featurizer = StereoMolGraphFeaturizer(stereo_atoms_only=False)
     mol_graph = featurizer(mol)

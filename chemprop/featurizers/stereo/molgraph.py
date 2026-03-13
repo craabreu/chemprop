@@ -64,8 +64,8 @@ class StereoMolGraphFeaturizer(SimpleMoleculeMolGraphFeaturizer):
         else:
             bond_features_extra = np.concatenate((placeholder, bond_features_extra), axis=1)
 
-        atoms_to_encode = self._get_atoms_to_encode(mol)
-        if not atoms_to_encode:
+        target_nodes = self._get_atoms_to_encode(mol)  # encoded edges converge to these nodes
+        if not target_nodes:
             return super().__call__(mol, atom_features_extra, bond_features_extra)
 
         mol_with_tags = mol_with_neighbor_priority_tags(mol)
@@ -75,17 +75,16 @@ class StereoMolGraphFeaturizer(SimpleMoleculeMolGraphFeaturizer):
 
         start = len(self.bond_featurizer)
         max_tag = NUM_NEIGHBOR_TAG_BITS - 1
-        for bond in mol_with_tags.GetBonds():
-            bond_idx = bond.GetIdx()
-            begin_idx, end_idx = bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()
-            if end_idx in atoms_to_encode:
-                end_tag = int(bond.GetIntProp("endAtomPriorityTag"))
+        for bond_idx, bond in enumerate(mol_with_tags.GetBonds()):
+            source, target = bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()
+            if target in target_nodes:
+                source_tag = int(bond.GetIntProp("beginAtomPriorityTag"))
                 forward_row = 2 * bond_idx
-                mol_graph.E[forward_row, start + min(end_tag, max_tag)] = HOT_ONE
-            if begin_idx in atoms_to_encode:
-                begin_tag = int(bond.GetIntProp("beginAtomPriorityTag"))
+                mol_graph.E[forward_row, start + min(source_tag, max_tag)] = HOT_ONE
+            if source in target_nodes:
+                target_tag = int(bond.GetIntProp("endAtomPriorityTag"))
                 reverse_row = 2 * bond_idx + 1
-                mol_graph.E[reverse_row, start + min(begin_tag, max_tag)] = HOT_ONE
+                mol_graph.E[reverse_row, start + min(target_tag, max_tag)] = HOT_ONE
         return mol_graph
 
     def _get_atoms_to_encode(self, mol: Chem.Mol) -> set[int]:
