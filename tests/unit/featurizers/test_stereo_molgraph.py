@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 from rdkit import Chem
+from rdkit.Chem.rdchem import ChiralType
 
 from chemprop.featurizers import SimpleMoleculeMolGraphFeaturizer
 from chemprop.featurizers.stereo.molgraph import (
@@ -9,7 +10,10 @@ from chemprop.featurizers.stereo.molgraph import (
     STEREOGENIC_BOND_TAGS,
     StereoMoleculeMolGraphFeaturizer,
 )
-from chemprop.featurizers.stereo.neighbor_tagging import mol_with_neighbor_priority_tags
+from chemprop.featurizers.stereo.neighbor_tagging import (
+    mol_with_neighbor_priority_tags,
+    normalize_chiral_tags_to_ccw,
+)
 
 
 def _encode_neighbor_tag(tag):
@@ -37,13 +41,145 @@ def _stereo_target_atoms(mol):
     return targets
 
 
-def test_stereo_featurizer_constructor_supports_stereo_atoms_only_option():
-    """Constructor accepts stereo_atoms_only and defaults it to True."""
+def _assert_same_molgraph(actual, expected):
+    np.testing.assert_array_equal(actual.V, expected.V)
+    np.testing.assert_array_equal(actual.E, expected.E)
+    np.testing.assert_array_equal(actual.edge_index, expected.edge_index)
+    np.testing.assert_array_equal(actual.rev_edge_index, expected.rev_edge_index)
+
+
+def test_stereo_featurizer_constructor_supports_options():
+    """Constructor accepts stereo options and uses expected defaults."""
     default_featurizer = StereoMoleculeMolGraphFeaturizer()
     assert default_featurizer.stereo_atoms_only
+    assert default_featurizer.normalize_chiral_tags
 
-    full_featurizer = StereoMoleculeMolGraphFeaturizer(stereo_atoms_only=False)
+    full_featurizer = StereoMoleculeMolGraphFeaturizer(
+        stereo_atoms_only=False, normalize_chiral_tags=True
+    )
     assert not full_featurizer.stereo_atoms_only
+    assert full_featurizer.normalize_chiral_tags
+
+
+def test_normalize_chiral_tags_option_matches_manual_normalization():
+    """normalize_chiral_tags=True matches explicit pre-normalization before featurization."""
+    source = Chem.MolFromSmiles("C[C@H](O)N")
+    tagged = mol_with_neighbor_priority_tags(source)
+    center = next(
+        atom for atom in tagged.GetAtoms() if atom.GetChiralTag() != ChiralType.CHI_UNSPECIFIED
+    )
+    center.SetChiralTag(ChiralType.CHI_TETRAHEDRAL_CW)
+
+    auto_featurizer = StereoMoleculeMolGraphFeaturizer(
+        stereo_atoms_only=False, normalize_chiral_tags=True
+    )
+    auto_graph = auto_featurizer(tagged)
+
+    expected = Chem.Mol(tagged)
+    normalize_chiral_tags_to_ccw(expected)
+    manual_featurizer = StereoMoleculeMolGraphFeaturizer(
+        stereo_atoms_only=False, normalize_chiral_tags=False
+    )
+    manual_graph = manual_featurizer(expected)
+
+    _assert_same_molgraph(auto_graph, manual_graph)
+
+
+def test_normalize_chiral_tags_option_matches_manual_normalization_stereo_atoms_only():
+    """normalize_chiral_tags interacts correctly with stereo_atoms_only=True."""
+    source = Chem.MolFromSmiles("C[C@H](O)N")
+    tagged = mol_with_neighbor_priority_tags(source)
+    center = next(
+        atom for atom in tagged.GetAtoms() if atom.GetChiralTag() != ChiralType.CHI_UNSPECIFIED
+    )
+    center.SetChiralTag(ChiralType.CHI_TETRAHEDRAL_CW)
+
+    auto_featurizer = StereoMoleculeMolGraphFeaturizer(
+        stereo_atoms_only=True, normalize_chiral_tags=True
+    )
+    auto_graph = auto_featurizer(tagged)
+
+    expected = Chem.Mol(tagged)
+    normalize_chiral_tags_to_ccw(expected)
+    manual_featurizer = StereoMoleculeMolGraphFeaturizer(
+        stereo_atoms_only=True, normalize_chiral_tags=False
+    )
+    manual_graph = manual_featurizer(expected)
+
+    _assert_same_molgraph(auto_graph, manual_graph)
+
+
+def test_normalize_chiral_tags_option_changes_features_for_cw_tagged_input():
+    """Enabling normalization changes graph features when a CW-tagged center is present."""
+    source = Chem.MolFromSmiles("C[C@H](O)N")
+    tagged = mol_with_neighbor_priority_tags(source)
+    center = next(
+        atom for atom in tagged.GetAtoms() if atom.GetChiralTag() != ChiralType.CHI_UNSPECIFIED
+    )
+    center.SetChiralTag(ChiralType.CHI_TETRAHEDRAL_CW)
+
+    no_norm_graph = StereoMoleculeMolGraphFeaturizer(
+        stereo_atoms_only=False, normalize_chiral_tags=False
+    )(tagged)
+    norm_graph = StereoMoleculeMolGraphFeaturizer(
+        stereo_atoms_only=False, normalize_chiral_tags=True
+    )(tagged)
+
+    assert not np.array_equal(no_norm_graph.V, norm_graph.V) or not np.array_equal(
+        no_norm_graph.E, norm_graph.E
+    )
+
+
+def test_normalize_chiral_tags_option_is_noop_when_centers_are_already_ccw():
+    """Enabling chiral-tag normalization does not change already normalized molecules."""
+    mol = Chem.MolFromSmiles("C[C@H](O)N")
+    no_norm_graph = StereoMoleculeMolGraphFeaturizer(
+        stereo_atoms_only=False, normalize_chiral_tags=False
+    )(mol)
+    norm_graph = StereoMoleculeMolGraphFeaturizer(
+        stereo_atoms_only=False, normalize_chiral_tags=True
+    )(mol)
+
+    _assert_same_molgraph(no_norm_graph, norm_graph)
+
+
+def test_normalize_chiral_tags_option_is_noop_on_non_chiral_stereo_bond_case():
+    """Normalization does not affect molecules with bond stereo but no chiral centers."""
+    mol = Chem.MolFromSmiles("F/C=C/F")
+    no_norm_graph = StereoMoleculeMolGraphFeaturizer(
+        stereo_atoms_only=False, normalize_chiral_tags=False
+    )(mol)
+    norm_graph = StereoMoleculeMolGraphFeaturizer(
+        stereo_atoms_only=False, normalize_chiral_tags=True
+    )(mol)
+
+    _assert_same_molgraph(no_norm_graph, norm_graph)
+
+
+def test_normalize_chiral_tags_option_does_not_mutate_pretagged_input_molecule():
+    """normalize_chiral_tags=True leaves a pre-tagged input molecule unchanged."""
+    source = Chem.MolFromSmiles("C[C@H](O)N")
+    tagged = mol_with_neighbor_priority_tags(source)
+    center = next(
+        atom for atom in tagged.GetAtoms() if atom.GetChiralTag() != ChiralType.CHI_UNSPECIFIED
+    )
+    center.SetChiralTag(ChiralType.CHI_TETRAHEDRAL_CW)
+    before_tag = center.GetChiralTag()
+    before_begin_tags = [int(bond.GetIntProp("beginAtomPriorityTag")) for bond in tagged.GetBonds()]
+    before_end_tags = [int(bond.GetIntProp("endAtomPriorityTag")) for bond in tagged.GetBonds()]
+
+    featurizer = StereoMoleculeMolGraphFeaturizer(
+        stereo_atoms_only=False, normalize_chiral_tags=True
+    )
+    _ = featurizer(tagged)
+
+    assert center.GetChiralTag() == before_tag
+    assert [
+        int(bond.GetIntProp("beginAtomPriorityTag")) for bond in tagged.GetBonds()
+    ] == before_begin_tags
+    assert [
+        int(bond.GetIntProp("endAtomPriorityTag")) for bond in tagged.GetBonds()
+    ] == before_end_tags
 
 
 def test_stereo_bond_extra_features_are_appended_by_feature_dimension(mol):
@@ -53,7 +189,7 @@ def test_stereo_bond_extra_features_are_appended_by_feature_dimension(mol):
     bond_features_extra = np.random.rand(n_bonds, extra_bond_fdim).astype(np.single)
 
     featurizer = StereoMoleculeMolGraphFeaturizer(
-        extra_bond_fdim=extra_bond_fdim, stereo_atoms_only=False
+        extra_bond_fdim=extra_bond_fdim, stereo_atoms_only=False, normalize_chiral_tags=False
     )
     mol_graph = featurizer(mol, bond_features_extra=bond_features_extra)
     tagged_mol = mol_with_neighbor_priority_tags(mol)

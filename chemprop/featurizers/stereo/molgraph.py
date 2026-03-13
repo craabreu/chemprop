@@ -9,6 +9,7 @@ from chemprop.featurizers.stereo.neighbor_tagging import (
     CHIRAL_CENTER_TAGS,
     STEREOGENIC_BOND_TAGS,
     mol_with_neighbor_priority_tags,
+    normalize_chiral_tags_to_ccw,
 )
 
 NUM_NEIGHBOR_TAG_BITS: int = 4
@@ -36,9 +37,13 @@ class StereoMoleculeMolGraphFeaturizer(SimpleMoleculeMolGraphFeaturizer):
     stereo_atoms_only : bool, default=True
         whether to encode neighbor-tag one-hots only on directed edges that converge to
         stereochemistry-relevant atoms (chiral centers and atoms on stereo-tagged bonds)
+    normalize_chiral_tags : bool, default=True
+        whether to normalize tetrahedral chiral tags to CCW (swapping the two top-priority
+        neighbors, if necessary) before featurization
     """
 
     stereo_atoms_only: bool = True
+    normalize_chiral_tags: bool = True
 
     def __post_init__(self):
         super().__post_init__()
@@ -64,6 +69,8 @@ class StereoMoleculeMolGraphFeaturizer(SimpleMoleculeMolGraphFeaturizer):
             return super().__call__(mol, atom_features_extra, bond_features_extra)
 
         mol_with_tags = mol_with_neighbor_priority_tags(mol)
+        if self.normalize_chiral_tags:
+            normalize_chiral_tags_to_ccw(mol_with_tags)
         mol_graph = super().__call__(mol_with_tags, atom_features_extra, bond_features_extra)
 
         start = len(self.bond_featurizer)
