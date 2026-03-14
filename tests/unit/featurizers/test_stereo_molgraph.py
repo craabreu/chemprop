@@ -54,9 +54,7 @@ def test_stereo_featurizer_constructor_supports_options():
     assert default_featurizer.stereo_atoms_only
     assert default_featurizer.normalize_chiral_tags
 
-    full_featurizer = StereoMolGraphFeaturizer(
-        stereo_atoms_only=False, normalize_chiral_tags=True
-    )
+    full_featurizer = StereoMolGraphFeaturizer(stereo_atoms_only=False, normalize_chiral_tags=True)
     assert not full_featurizer.stereo_atoms_only
     assert full_featurizer.normalize_chiral_tags
 
@@ -70,9 +68,7 @@ def test_normalize_chiral_tags_option_matches_manual_normalization():
     )
     center.SetChiralTag(ChiralType.CHI_TETRAHEDRAL_CW)
 
-    auto_featurizer = StereoMolGraphFeaturizer(
-        stereo_atoms_only=False, normalize_chiral_tags=True
-    )
+    auto_featurizer = StereoMolGraphFeaturizer(stereo_atoms_only=False, normalize_chiral_tags=True)
     auto_graph = auto_featurizer(tagged)
 
     expected = Chem.Mol(tagged)
@@ -94,9 +90,7 @@ def test_normalize_chiral_tags_option_matches_manual_normalization_stereo_atoms_
     )
     center.SetChiralTag(ChiralType.CHI_TETRAHEDRAL_CW)
 
-    auto_featurizer = StereoMolGraphFeaturizer(
-        stereo_atoms_only=True, normalize_chiral_tags=True
-    )
+    auto_featurizer = StereoMolGraphFeaturizer(stereo_atoms_only=True, normalize_chiral_tags=True)
     auto_graph = auto_featurizer(tagged)
 
     expected = Chem.Mol(tagged)
@@ -118,12 +112,12 @@ def test_normalize_chiral_tags_option_changes_features_for_cw_tagged_input():
     )
     center.SetChiralTag(ChiralType.CHI_TETRAHEDRAL_CW)
 
-    no_norm_graph = StereoMolGraphFeaturizer(
-        stereo_atoms_only=False, normalize_chiral_tags=False
-    )(tagged)
-    norm_graph = StereoMolGraphFeaturizer(
-        stereo_atoms_only=False, normalize_chiral_tags=True
-    )(tagged)
+    no_norm_graph = StereoMolGraphFeaturizer(stereo_atoms_only=False, normalize_chiral_tags=False)(
+        tagged
+    )
+    norm_graph = StereoMolGraphFeaturizer(stereo_atoms_only=False, normalize_chiral_tags=True)(
+        tagged
+    )
 
     assert not np.array_equal(no_norm_graph.V, norm_graph.V) or not np.array_equal(
         no_norm_graph.E, norm_graph.E
@@ -133,12 +127,10 @@ def test_normalize_chiral_tags_option_changes_features_for_cw_tagged_input():
 def test_normalize_chiral_tags_option_is_noop_when_centers_are_already_ccw():
     """Enabling chiral-tag normalization does not change already normalized molecules."""
     mol = Chem.MolFromSmiles("C[C@H](O)N")
-    no_norm_graph = StereoMolGraphFeaturizer(
-        stereo_atoms_only=False, normalize_chiral_tags=False
-    )(mol)
-    norm_graph = StereoMolGraphFeaturizer(
-        stereo_atoms_only=False, normalize_chiral_tags=True
-    )(mol)
+    no_norm_graph = StereoMolGraphFeaturizer(stereo_atoms_only=False, normalize_chiral_tags=False)(
+        mol
+    )
+    norm_graph = StereoMolGraphFeaturizer(stereo_atoms_only=False, normalize_chiral_tags=True)(mol)
 
     _assert_same_molgraph(no_norm_graph, norm_graph)
 
@@ -146,12 +138,10 @@ def test_normalize_chiral_tags_option_is_noop_when_centers_are_already_ccw():
 def test_normalize_chiral_tags_option_is_noop_on_non_chiral_stereo_bond_case():
     """Normalization does not affect molecules with bond stereo but no chiral centers."""
     mol = Chem.MolFromSmiles("F/C=C/F")
-    no_norm_graph = StereoMolGraphFeaturizer(
-        stereo_atoms_only=False, normalize_chiral_tags=False
-    )(mol)
-    norm_graph = StereoMolGraphFeaturizer(
-        stereo_atoms_only=False, normalize_chiral_tags=True
-    )(mol)
+    no_norm_graph = StereoMolGraphFeaturizer(stereo_atoms_only=False, normalize_chiral_tags=False)(
+        mol
+    )
+    norm_graph = StereoMolGraphFeaturizer(stereo_atoms_only=False, normalize_chiral_tags=True)(mol)
 
     _assert_same_molgraph(no_norm_graph, norm_graph)
 
@@ -168,9 +158,7 @@ def test_normalize_chiral_tags_option_does_not_mutate_pretagged_input_molecule()
     before_begin_tags = [int(bond.GetIntProp("beginAtomPriorityTag")) for bond in tagged.GetBonds()]
     before_end_tags = [int(bond.GetIntProp("endAtomPriorityTag")) for bond in tagged.GetBonds()]
 
-    featurizer = StereoMolGraphFeaturizer(
-        stereo_atoms_only=False, normalize_chiral_tags=True
-    )
+    featurizer = StereoMolGraphFeaturizer(stereo_atoms_only=False, normalize_chiral_tags=True)
     _ = featurizer(tagged)
 
     assert center.GetChiralTag() == before_tag
@@ -289,9 +277,7 @@ def test_stereo_asymmetry_is_limited_to_neighbor_tag_bits():
     extra_bond_fdim = 2
     bond_features_extra = np.random.rand(mol.GetNumBonds(), extra_bond_fdim).astype(np.single)
 
-    featurizer = StereoMolGraphFeaturizer(
-        extra_bond_fdim=extra_bond_fdim, stereo_atoms_only=False
-    )
+    featurizer = StereoMolGraphFeaturizer(extra_bond_fdim=extra_bond_fdim, stereo_atoms_only=False)
     mol_graph = featurizer(mol, bond_features_extra=bond_features_extra)
     tagged_mol = mol_with_neighbor_priority_tags(mol)
 
@@ -485,9 +471,7 @@ def test_stereo_atoms_only_with_extra_bond_features_preserves_extra_columns():
     extra_bond_fdim = 2
     bond_features_extra = np.random.rand(mol.GetNumBonds(), extra_bond_fdim).astype(np.single)
 
-    featurizer = StereoMolGraphFeaturizer(
-        extra_bond_fdim=extra_bond_fdim, stereo_atoms_only=True
-    )
+    featurizer = StereoMolGraphFeaturizer(extra_bond_fdim=extra_bond_fdim, stereo_atoms_only=True)
     mol_graph = featurizer(mol, bond_features_extra=bond_features_extra)
     tagged_mol = mol_with_neighbor_priority_tags(mol)
     targets = _stereo_target_atoms(tagged_mol)
@@ -516,6 +500,46 @@ def test_stereo_atoms_only_with_extra_bond_features_preserves_extra_columns():
         np.testing.assert_allclose(
             mol_graph.E[2 * bond_idx + 1, stop:], bond_features_extra[bond_idx]
         )
+
+
+def test_enantiomer_molgraphs_differ_in_edges_when_chiral_tags_are_normalized():
+    """With chiral normalization enabled, enantiomers differ in edge features, not nodes."""
+    left = Chem.MolFromSmiles("C[C@H](O)N")
+    right = Chem.MolFromSmiles("C[C@@H](O)N")
+    featurizer = StereoMolGraphFeaturizer(stereo_atoms_only=False, normalize_chiral_tags=True)
+
+    left_graph = featurizer(left)
+    right_graph = featurizer(right)
+
+    np.testing.assert_array_equal(left_graph.V, right_graph.V)
+    assert not np.array_equal(left_graph.E, right_graph.E)
+
+
+def test_enantiomer_molgraphs_differ_in_nodes_when_chiral_tags_are_not_normalized():
+    """With chiral normalization disabled, enantiomers differ in node features, not edges."""
+    left = Chem.MolFromSmiles("C[C@H](O)N")
+    right = Chem.MolFromSmiles("C[C@@H](O)N")
+    featurizer = StereoMolGraphFeaturizer(stereo_atoms_only=False, normalize_chiral_tags=False)
+
+    left_graph = featurizer(left)
+    right_graph = featurizer(right)
+
+    assert not np.array_equal(left_graph.V, right_graph.V)
+    np.testing.assert_array_equal(left_graph.E, right_graph.E)
+
+
+def test_cis_trans_isomers_differ_only_in_base_bond_feature_slice():
+    """Cis/trans isomers differ in E only within the base bond-featurizer slice."""
+    cis = Chem.MolFromSmiles("F/C=C\\F")
+    trans = Chem.MolFromSmiles("F/C=C/F")
+    featurizer = StereoMolGraphFeaturizer(stereo_atoms_only=False)
+
+    cis_graph = featurizer(cis)
+    trans_graph = featurizer(trans)
+
+    base_stop = len(featurizer.bond_featurizer)
+    assert not np.array_equal(cis_graph.E[:, :base_stop], trans_graph.E[:, :base_stop])
+    np.testing.assert_array_equal(cis_graph.E[:, base_stop:], trans_graph.E[:, base_stop:])
 
 
 def test_stereo_featurizer_does_not_mutate_input_molecule():
