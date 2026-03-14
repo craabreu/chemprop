@@ -29,6 +29,14 @@ def _expected_tag_for_directed_edge(bond, source_atom_idx):
     return int(bond.GetIntProp("endAtomPriorityTag"))
 
 
+def _expected_tag_for_directed_edge_with_mode(bond, source_atom_idx, convergent_mode):
+    if convergent_mode:
+        return _expected_tag_for_directed_edge(bond, source_atom_idx)
+    if source_atom_idx == bond.GetBeginAtomIdx():
+        return int(bond.GetIntProp("endAtomPriorityTag"))
+    return int(bond.GetIntProp("beginAtomPriorityTag"))
+
+
 def _stereo_target_atoms(mol):
     targets = {
         atom.GetIdx() for atom in mol.GetAtoms() if atom.GetChiralTag() in CHIRAL_CENTER_TAGS
@@ -53,10 +61,14 @@ def test_stereo_featurizer_constructor_supports_options():
     default_featurizer = StereoMolGraphFeaturizer()
     assert default_featurizer.stereo_atoms_only
     assert default_featurizer.normalize_chiral_tags
+    assert default_featurizer.convergent_mode
 
-    full_featurizer = StereoMolGraphFeaturizer(stereo_atoms_only=False, normalize_chiral_tags=True)
+    full_featurizer = StereoMolGraphFeaturizer(
+        stereo_atoms_only=False, normalize_chiral_tags=True, convergent_mode=False
+    )
     assert not full_featurizer.stereo_atoms_only
     assert full_featurizer.normalize_chiral_tags
+    assert not full_featurizer.convergent_mode
 
 
 def test_normalize_chiral_tags_option_matches_manual_normalization():
@@ -271,6 +283,29 @@ def test_stereo_neighbor_tag_bits_match_source_neighbor_tags_via_edge_index():
         )
 
 
+@pytest.mark.parametrize("convergent_mode", [True, False])
+def test_stereo_neighbor_tag_bits_follow_convergence_mode(convergent_mode):
+    """Directed-edge tag bits follow convergent or divergent assignment mode."""
+    mol = Chem.MolFromSmiles("C[C@](F)(Cl)Br")
+    featurizer = StereoMolGraphFeaturizer(stereo_atoms_only=False, convergent_mode=convergent_mode)
+    mol_graph = featurizer(mol)
+    tagged_mol = mol_with_neighbor_priority_tags(mol)
+
+    start = len(featurizer.bond_featurizer)
+    stop = start + NUM_NEIGHBOR_TAG_BITS
+
+    for edge_idx, (src, dst) in enumerate(mol_graph.edge_index.T):
+        src = int(src)
+        dst = int(dst)
+        bond = tagged_mol.GetBondBetweenAtoms(src, dst)
+        assert bond is not None
+
+        expected_tag = _expected_tag_for_directed_edge_with_mode(bond, src, convergent_mode)
+        np.testing.assert_array_equal(
+            mol_graph.E[edge_idx, start:stop], _encode_neighbor_tag(expected_tag)
+        )
+
+
 def test_stereo_asymmetry_is_limited_to_neighbor_tag_bits():
     """Forward/reverse edge features differ only in the neighbor-tag one-hot slice."""
     mol = Chem.MolFromSmiles("C[C@H](O)N")
@@ -379,6 +414,56 @@ def test_stereo_atoms_only_encodes_only_edges_converging_to_chiral_center():
 
     assert incoming_count == center.GetDegree()
     assert outgoing_count == center.GetDegree()
+
+
+@pytest.mark.parametrize(
+    ("convergent_mode", "encoded_edge_end"), [(True, "incoming"), (False, "outgoing")]
+)
+def test_stereo_atoms_only_directionality_respects_convergence_mode(
+    convergent_mode, encoded_edge_end
+):
+    """In stereo_atoms_only mode, convergent_mode selects incoming vs outgoing encoded edges."""
+    mol = Chem.MolFromSmiles("C[C@H](O)N")
+    featurizer = StereoMolGraphFeaturizer(stereo_atoms_only=True, convergent_mode=convergent_mode)
+    mol_graph = featurizer(mol)
+    tagged_mol = mol_with_neighbor_priority_tags(mol)
+
+    center = next(
+        atom for atom in tagged_mol.GetAtoms() if atom.GetChiralTag() in CHIRAL_CENTER_TAGS
+    )
+    center_idx = center.GetIdx()
+
+    start = len(featurizer.bond_featurizer)
+    stop = start + NUM_NEIGHBOR_TAG_BITS
+    zero_bits = np.zeros(NUM_NEIGHBOR_TAG_BITS, dtype=np.single)
+
+    encoded_count = 0
+    suppressed_count = 0
+    for edge_idx, (src, dst) in enumerate(mol_graph.edge_index.T):
+        src = int(src)
+        dst = int(dst)
+        bond = tagged_mol.GetBondBetweenAtoms(src, dst)
+        assert bond is not None
+
+        is_incoming = dst == center_idx
+        is_outgoing = src == center_idx
+        assert is_incoming or is_outgoing
+
+        edge_is_encoded = (encoded_edge_end == "incoming" and is_incoming) or (
+            encoded_edge_end == "outgoing" and is_outgoing
+        )
+        if edge_is_encoded:
+            encoded_count += 1
+            expected_tag = _expected_tag_for_directed_edge_with_mode(bond, src, convergent_mode)
+            np.testing.assert_array_equal(
+                mol_graph.E[edge_idx, start:stop], _encode_neighbor_tag(expected_tag)
+            )
+        else:
+            suppressed_count += 1
+            np.testing.assert_array_equal(mol_graph.E[edge_idx, start:stop], zero_bits)
+
+    assert encoded_count == center.GetDegree()
+    assert suppressed_count == center.GetDegree()
 
 
 def test_stereo_atoms_only_default_keeps_neighbor_bits_zero_without_stereo_atoms():

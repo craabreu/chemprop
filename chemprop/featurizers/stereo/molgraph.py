@@ -40,10 +40,14 @@ class StereoMolGraphFeaturizer(SimpleMoleculeMolGraphFeaturizer):
     normalize_chiral_tags : bool, default=True
         whether to normalize tetrahedral chiral tags to CCW (swapping the two top-priority
         neighbors, if necessary) before featurization
+    convergent_mode : bool, default=True
+        whether to encode the tags of the neighbors of an atom into the directed edges that
+        converge to that atom rather than those that originate from it.
     """
 
     stereo_atoms_only: bool = True
     normalize_chiral_tags: bool = True
+    convergent_mode: bool = True
 
     def __post_init__(self):
         super().__post_init__()
@@ -77,14 +81,16 @@ class StereoMolGraphFeaturizer(SimpleMoleculeMolGraphFeaturizer):
         max_tag = NUM_NEIGHBOR_TAG_BITS - 1
         for bond_idx, bond in enumerate(mol_with_tags.GetBonds()):
             source, target = bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()
+            forward_row = 2 * bond_idx
+            reverse_row = forward_row + 1
             if target in target_nodes:
                 source_tag = int(bond.GetIntProp("beginAtomPriorityTag"))
-                forward_row = 2 * bond_idx
-                mol_graph.E[forward_row, start + min(source_tag, max_tag)] = HOT_ONE
+                row = forward_row if self.convergent_mode else reverse_row
+                mol_graph.E[row, start + min(source_tag, max_tag)] = HOT_ONE
             if source in target_nodes:
                 target_tag = int(bond.GetIntProp("endAtomPriorityTag"))
-                reverse_row = 2 * bond_idx + 1
-                mol_graph.E[reverse_row, start + min(target_tag, max_tag)] = HOT_ONE
+                row = reverse_row if self.convergent_mode else forward_row
+                mol_graph.E[row, start + min(target_tag, max_tag)] = HOT_ONE
         return mol_graph
 
     def _get_atoms_to_encode(self, mol: Chem.Mol) -> set[int]:
