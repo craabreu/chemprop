@@ -6,7 +6,7 @@ from rdkit.Chem.rdchem import ChiralType
 from chemprop.featurizers import SimpleMoleculeMolGraphFeaturizer
 from chemprop.featurizers.stereo.molgraph import (
     CHIRAL_CENTER_TAGS,
-    NUM_NEIGHBOR_TAG_BITS,
+    DEFAULT_NUM_NEIGHBOR_BITS,
     STEREOGENIC_BOND_TAGS,
     StereoMolGraphFeaturizer,
 )
@@ -17,8 +17,14 @@ from chemprop.featurizers.stereo.neighbor_tagging import (
 
 
 def _encode_neighbor_tag(tag):
-    one_hot = np.zeros(NUM_NEIGHBOR_TAG_BITS, dtype=np.single)
+    one_hot = np.zeros(DEFAULT_NUM_NEIGHBOR_BITS, dtype=np.single)
     one_hot[min(tag, 3)] = 1.0
+    return one_hot
+
+
+def _encode_neighbor_tag_with_width(tag, width):
+    one_hot = np.zeros(width, dtype=np.single)
+    one_hot[min(tag, width - 1)] = 1.0
     return one_hot
 
 
@@ -62,13 +68,25 @@ def test_stereo_featurizer_constructor_supports_options():
     assert default_featurizer.stereo_atoms_only
     assert default_featurizer.normalize_chiral_tags
     assert default_featurizer.convergent_mode
+    assert default_featurizer.num_neighbor_bits == DEFAULT_NUM_NEIGHBOR_BITS
 
     full_featurizer = StereoMolGraphFeaturizer(
-        stereo_atoms_only=False, normalize_chiral_tags=True, convergent_mode=False
+        stereo_atoms_only=False,
+        normalize_chiral_tags=True,
+        convergent_mode=False,
+        num_neighbor_bits=6,
     )
     assert not full_featurizer.stereo_atoms_only
     assert full_featurizer.normalize_chiral_tags
     assert not full_featurizer.convergent_mode
+    assert full_featurizer.num_neighbor_bits == 6
+    assert full_featurizer.bond_fdim == len(full_featurizer.bond_featurizer) + 6
+
+
+def test_stereo_featurizer_raises_for_non_positive_num_neighbor_bits():
+    """num_neighbor_bits must be strictly positive."""
+    with pytest.raises(ValueError):
+        StereoMolGraphFeaturizer(num_neighbor_bits=0)
 
 
 def test_normalize_chiral_tags_option_matches_manual_normalization():
@@ -195,7 +213,7 @@ def test_stereo_bond_extra_features_are_appended_by_feature_dimension(mol):
     tagged_mol = mol_with_neighbor_priority_tags(mol)
 
     start = len(featurizer.bond_featurizer)
-    stop = start + NUM_NEIGHBOR_TAG_BITS
+    stop = start + DEFAULT_NUM_NEIGHBOR_BITS
 
     for bond in tagged_mol.GetBonds():
         bond_idx = bond.GetIdx()
@@ -219,7 +237,7 @@ def test_stereo_neighbor_tag_bits_can_be_asymmetric_between_edge_directions():
     tagged_mol = mol_with_neighbor_priority_tags(mol)
 
     start = len(featurizer.bond_featurizer)
-    stop = start + NUM_NEIGHBOR_TAG_BITS
+    stop = start + DEFAULT_NUM_NEIGHBOR_BITS
 
     asymmetric_found = False
     for bond in tagged_mol.GetBonds():
@@ -243,7 +261,7 @@ def test_stereo_neighbor_tag_bucket_for_tag_three_maps_to_last_bit():
     tagged_mol = mol_with_neighbor_priority_tags(mol)
 
     start = len(featurizer.bond_featurizer)
-    stop = start + NUM_NEIGHBOR_TAG_BITS
+    stop = start + DEFAULT_NUM_NEIGHBOR_BITS
 
     found_tag_three = False
     for edge_idx, (src, dst) in enumerate(mol_graph.edge_index.T):
@@ -268,7 +286,7 @@ def test_stereo_neighbor_tag_bits_match_source_neighbor_tags_via_edge_index():
     tagged_mol = mol_with_neighbor_priority_tags(mol)
 
     start = len(featurizer.bond_featurizer)
-    stop = start + NUM_NEIGHBOR_TAG_BITS
+    stop = start + DEFAULT_NUM_NEIGHBOR_BITS
 
     for edge_idx, (src, dst) in enumerate(mol_graph.edge_index.T):
         src = int(src)
@@ -283,6 +301,30 @@ def test_stereo_neighbor_tag_bits_match_source_neighbor_tags_via_edge_index():
         )
 
 
+def test_stereo_neighbor_tag_bit_width_is_configurable_and_clips_to_last_bucket():
+    """Custom neighbor-priority width changes slice size and clips high tags to last bit."""
+    mol = Chem.MolFromSmiles("C[C@](F)(Cl)Br")
+    num_bits = 2
+    featurizer = StereoMolGraphFeaturizer(stereo_atoms_only=False, num_neighbor_bits=num_bits)
+    mol_graph = featurizer(mol)
+    tagged_mol = mol_with_neighbor_priority_tags(mol)
+
+    start = len(featurizer.bond_featurizer)
+    stop = start + num_bits
+    assert mol_graph.E.shape[1] == featurizer.bond_fdim
+
+    for edge_idx, (src, dst) in enumerate(mol_graph.edge_index.T):
+        src = int(src)
+        dst = int(dst)
+        bond = tagged_mol.GetBondBetweenAtoms(src, dst)
+        assert bond is not None
+        expected_tag = _expected_tag_for_directed_edge(bond, src)
+        np.testing.assert_array_equal(
+            mol_graph.E[edge_idx, start:stop],
+            _encode_neighbor_tag_with_width(expected_tag, num_bits),
+        )
+
+
 @pytest.mark.parametrize("convergent_mode", [True, False])
 def test_stereo_neighbor_tag_bits_follow_convergence_mode(convergent_mode):
     """Directed-edge tag bits follow convergent or divergent assignment mode."""
@@ -292,7 +334,7 @@ def test_stereo_neighbor_tag_bits_follow_convergence_mode(convergent_mode):
     tagged_mol = mol_with_neighbor_priority_tags(mol)
 
     start = len(featurizer.bond_featurizer)
-    stop = start + NUM_NEIGHBOR_TAG_BITS
+    stop = start + DEFAULT_NUM_NEIGHBOR_BITS
 
     for edge_idx, (src, dst) in enumerate(mol_graph.edge_index.T):
         src = int(src)
@@ -317,7 +359,7 @@ def test_stereo_asymmetry_is_limited_to_neighbor_tag_bits():
     tagged_mol = mol_with_neighbor_priority_tags(mol)
 
     start = len(featurizer.bond_featurizer)
-    stop = start + NUM_NEIGHBOR_TAG_BITS
+    stop = start + DEFAULT_NUM_NEIGHBOR_BITS
 
     asymmetric_found = False
     for bond in tagged_mol.GetBonds():
@@ -351,13 +393,13 @@ def test_stereo_atoms_only_default_encodes_edges_into_stereo_relevant_atoms(smil
     tagged_mol = mol_with_neighbor_priority_tags(mol)
 
     start = len(featurizer.bond_featurizer)
-    stop = start + NUM_NEIGHBOR_TAG_BITS
+    stop = start + DEFAULT_NUM_NEIGHBOR_BITS
     targets = _stereo_target_atoms(tagged_mol)
     assert targets
 
     saw_target_edge = False
     saw_non_target_edge = False
-    zero_bits = np.zeros(NUM_NEIGHBOR_TAG_BITS, dtype=np.single)
+    zero_bits = np.zeros(DEFAULT_NUM_NEIGHBOR_BITS, dtype=np.single)
     for edge_idx, (src, dst) in enumerate(mol_graph.edge_index.T):
         src = int(src)
         dst = int(dst)
@@ -391,8 +433,8 @@ def test_stereo_atoms_only_encodes_only_edges_converging_to_chiral_center():
     center_idx = center.GetIdx()
 
     start = len(featurizer.bond_featurizer)
-    stop = start + NUM_NEIGHBOR_TAG_BITS
-    zero_bits = np.zeros(NUM_NEIGHBOR_TAG_BITS, dtype=np.single)
+    stop = start + DEFAULT_NUM_NEIGHBOR_BITS
+    zero_bits = np.zeros(DEFAULT_NUM_NEIGHBOR_BITS, dtype=np.single)
 
     incoming_count = 0
     outgoing_count = 0
@@ -434,8 +476,8 @@ def test_stereo_atoms_only_directionality_respects_convergence_mode(
     center_idx = center.GetIdx()
 
     start = len(featurizer.bond_featurizer)
-    stop = start + NUM_NEIGHBOR_TAG_BITS
-    zero_bits = np.zeros(NUM_NEIGHBOR_TAG_BITS, dtype=np.single)
+    stop = start + DEFAULT_NUM_NEIGHBOR_BITS
+    zero_bits = np.zeros(DEFAULT_NUM_NEIGHBOR_BITS, dtype=np.single)
 
     encoded_count = 0
     suppressed_count = 0
@@ -473,7 +515,7 @@ def test_stereo_atoms_only_default_keeps_neighbor_bits_zero_without_stereo_atoms
     mol_graph = featurizer(mol)
 
     start = len(featurizer.bond_featurizer)
-    stop = start + NUM_NEIGHBOR_TAG_BITS
+    stop = start + DEFAULT_NUM_NEIGHBOR_BITS
     np.testing.assert_array_equal(mol_graph.E[:, start:stop], 0.0)
 
 
@@ -486,7 +528,7 @@ def test_stereo_atoms_only_option_changes_behavior_on_non_stereogenic_molecule()
     graph_all_atoms = featurizer_all_atoms(mol)
 
     start = len(featurizer_stereo_only.bond_featurizer)
-    stop = start + NUM_NEIGHBOR_TAG_BITS
+    stop = start + DEFAULT_NUM_NEIGHBOR_BITS
     np.testing.assert_array_equal(graph_stereo_only.E[:, start:stop], 0.0)
 
     assert np.any(graph_all_atoms.E[:, start:stop] != 0.0)
@@ -503,7 +545,7 @@ def test_stereo_and_simple_match_on_non_stereo_molecule_except_neighbor_tag_bits
     stereo_graph = stereo_featurizer(mol)
 
     start = len(stereo_featurizer.bond_featurizer)
-    stop = start + NUM_NEIGHBOR_TAG_BITS
+    stop = start + DEFAULT_NUM_NEIGHBOR_BITS
 
     np.testing.assert_array_equal(stereo_graph.V, simple_graph.V)
     np.testing.assert_array_equal(stereo_graph.edge_index, simple_graph.edge_index)
@@ -525,7 +567,7 @@ def test_stereo_and_simple_match_on_non_stereo_molecule_with_extra_bond_features
     stereo_graph = stereo_featurizer(mol, bond_features_extra=bond_features_extra)
 
     start = len(stereo_featurizer.bond_featurizer)
-    stop = start + NUM_NEIGHBOR_TAG_BITS
+    stop = start + DEFAULT_NUM_NEIGHBOR_BITS
 
     np.testing.assert_array_equal(stereo_graph.V, simple_graph.V)
     np.testing.assert_array_equal(stereo_graph.edge_index, simple_graph.edge_index)
@@ -562,8 +604,8 @@ def test_stereo_atoms_only_with_extra_bond_features_preserves_extra_columns():
     targets = _stereo_target_atoms(tagged_mol)
 
     start = len(featurizer.bond_featurizer)
-    stop = start + NUM_NEIGHBOR_TAG_BITS
-    zero_bits = np.zeros(NUM_NEIGHBOR_TAG_BITS, dtype=np.single)
+    stop = start + DEFAULT_NUM_NEIGHBOR_BITS
+    zero_bits = np.zeros(DEFAULT_NUM_NEIGHBOR_BITS, dtype=np.single)
 
     for edge_idx, (src, dst) in enumerate(mol_graph.edge_index.T):
         src = int(src)

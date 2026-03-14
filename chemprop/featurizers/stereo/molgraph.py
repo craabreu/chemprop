@@ -12,46 +12,81 @@ from chemprop.featurizers.stereo.neighbor_tagging import (
     normalize_chiral_tags_to_ccw,
 )
 
-NUM_NEIGHBOR_TAG_BITS: int = 4
+DEFAULT_NUM_NEIGHBOR_BITS: int = 4
 HOT_ONE: np.single = np.single(1.0)
 
 
 @dataclass
 class StereoMolGraphFeaturizer(SimpleMoleculeMolGraphFeaturizer):
-    """Featurizes molecules with asymmetric stereochemical information.
+    """Featurize molecules with asymmetric stereochemical edge information.
+
+    This featurizer extends :class:`SimpleMoleculeMolGraphFeaturizer` by adding a number ``n``
+    of neighbor-priority bits to each directed bond feature vector. The inserted bits encode a
+    neighbor-priority ordering derived from RDKit's :func:`~rdkit.Chem.CanonicalRankAtoms`
+    function with arguments ``breakTies`` and ``includeAtomMaps`` set to ``False`` (see [1]_).
+
+    Neighbor priorities are encoded as 0-based tags, where tag 0 denotes the highest-priority
+    neighbor, tag 1 the second-highest, and so on. Tags greater than or equal to ``n`` are
+    clipped to the last bit.
+
+    | Tag value | Meaning                   | One-hot encoding  |
+    |-----------|---------------------------|-------------------|
+    | 0         | highest priority neighbor | [1, 0, 0, ..., 0] |
+    | 1         | second-highest            | [0, 1, 0, ..., 0] |
+    | ...       | ...                       | ...               |
+    | >= n - 1  | clamped to last bit       | [0, 0, 0, ..., 1] |
+
+    The resulting bond feature layout is:
+
+    ``[base bond features | n neighbor-priority bits | user-provided extra bond features]``.
+
+    The priorities of the neighbors of an atom are encoded either in the edges that converge
+    to that atom (convergent mode) or in the edges that originate from it (divergent mode).
+    In standard Chemprop featurization, the two directed edges associated with a bond initially
+    carry identical features. Here, the inserted neighbor-priority bits can differ between the
+    two directions already at featurization time.
 
     Parameters
     ----------
     atom_featurizer : AtomFeaturizer, default=MultiHotAtomFeaturizer()
-        the featurizer with which to calculate feature representations of the atoms in a given
-        molecule
+        Featurizer used to compute atom features.
     bond_featurizer : BondFeaturizer, default=MultiHotBondFeaturizer()
-        the featurizer with which to calculate feature representations of the bonds in a given
-        molecule
+        Featurizer used to compute base bond features.
     extra_atom_fdim : int, default=0
-        the dimension of the additional features that will be concatenated onto the calculated
-        features of each atom
+        Dimension of user-provided extra atom features concatenated to each atom row.
     extra_bond_fdim : int, default=0
-        the dimension of the additional features that will be concatenated onto the calculated
-        features of each bond
+        Dimension of user-provided extra bond features concatenated after the inserted
+        neighbor-priority bits.
+    num_neighbor_bits : int, default=4
+        Number of neighbor-priority bits to encode in each directed edge.
     stereo_atoms_only : bool, default=True
-        whether to encode neighbor-tag one-hots only on directed edges that converge to
-        stereochemistry-relevant atoms (chiral centers and atoms on stereo-tagged bonds)
+        If ``True``, encode neighbor-priority bits only for bonds adjacent to stereochemically
+        relevant atoms (tetrahedral centers and atoms participating in stereo-tagged bonds).
+        If ``False``, all atoms are eligible.
     normalize_chiral_tags : bool, default=True
-        whether to normalize tetrahedral chiral tags to CCW (swapping the two top-priority
-        neighbors, if necessary) before featurization
+        If ``True``, transforms all ``CHI_TETRAHEDRAL_CW`` chiral tags to
+        ``CHI_TETRAHEDRAL_CCW`` by exchanging local priority tags 0 and 1.
+        This transfers the distinction between enantiomers from graph nodes to directed edges.
     convergent_mode : bool, default=True
-        whether to encode the tags of the neighbors of an atom into the directed edges that
-        converge to that atom rather than those that originate from it.
+        Controls which directed edge receives a target atom's neighbor-priority tag.
+        If ``True``, tags are written on directed edges that converge to the target atom.
+        If ``False``, the same tags are written on the opposite directed edges (divergent mode).
+
+    References
+    ----------
+    .. [1] https://www.rdkit.org/docs/source/rdkit.Chem.rdmolfiles.html#rdkit.Chem.rdmolfiles.CanonicalRankAtoms
     """
 
     stereo_atoms_only: bool = True
     normalize_chiral_tags: bool = True
     convergent_mode: bool = True
+    num_neighbor_bits: int = DEFAULT_NUM_NEIGHBOR_BITS
 
     def __post_init__(self):
         super().__post_init__()
-        self.bond_fdim += NUM_NEIGHBOR_TAG_BITS
+        if self.num_neighbor_bits < 1:
+            raise ValueError("num_neighbor_bits must be >= 1")
+        self.bond_fdim += self.num_neighbor_bits
 
     def __call__(
         self,
@@ -62,7 +97,7 @@ class StereoMolGraphFeaturizer(SimpleMoleculeMolGraphFeaturizer):
         num_extra_bond_feats = (
             len(bond_features_extra) if bond_features_extra is not None else mol.GetNumBonds()
         )
-        placeholder = np.zeros((num_extra_bond_feats, NUM_NEIGHBOR_TAG_BITS), dtype=np.single)
+        placeholder = np.zeros((num_extra_bond_feats, self.num_neighbor_bits), dtype=np.single)
         if bond_features_extra is None:
             bond_features_extra = placeholder
         else:
@@ -78,7 +113,7 @@ class StereoMolGraphFeaturizer(SimpleMoleculeMolGraphFeaturizer):
         mol_graph = super().__call__(mol_with_tags, atom_features_extra, bond_features_extra)
 
         start = len(self.bond_featurizer)
-        max_tag = NUM_NEIGHBOR_TAG_BITS - 1
+        max_tag = self.num_neighbor_bits - 1
         for bond_idx, bond in enumerate(mol_with_tags.GetBonds()):
             source, target = bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()
             forward_row = 2 * bond_idx
