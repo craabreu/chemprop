@@ -1,5 +1,5 @@
 import numpy as np
-from rdkit.Chem.rdchem import Atom, BondStereo, ChiralType, Mol
+from rdkit.Chem.rdchem import Atom, ChiralType, Mol
 from rdkit.Chem.rdmolfiles import CanonicalRankAtoms
 
 CHIRAL_CENTER_TAGS = {ChiralType.CHI_TETRAHEDRAL_CW, ChiralType.CHI_TETRAHEDRAL_CCW}
@@ -72,21 +72,15 @@ def mol_with_neighbor_priority_tags(mol: Mol) -> Mol:
     - ``beginAtomPriorityTag``: priority of the begin atom among neighbors of
       the end atom.
 
-    If necessary:
-
-    - Atom chiral tags are flipped (CW ↔ CCW) to match the local neighbor
-      priority order.
-    - Bond stereo flags are normalized (Z → cis, E → trans) and flipped
-      (cis ↔ trans) so that the stereo annotation is consistent with the
-      local neighbor priority order.
+    If necessary, atom chiral tags are flipped (CW ↔ CCW) to match the local
+    neighbor priority order.
 
     Finally, the function adds a boolean property
     ``hasNeighborPriorityTags=True`` to the molecule.
 
     Ties in canonical atom ranks are allowed and reflect molecular symmetry.
     In well-formed molecules, all neighbors of a tetrahedral stereocenter
-    have unique canonical ranks. Similarly, substituents on each side of a
-    stereo-tagged double bond have unique canonical ranks.
+    have unique canonical ranks.
 
     Parameters
     ----------
@@ -97,7 +91,7 @@ def mol_with_neighbor_priority_tags(mol: Mol) -> Mol:
     -------
     rdkit.Chem.Mol
         A copy of the molecule with annotated neighbor priority tags and
-        stereo annotations adjusted to the local neighbor priority order.
+        atom chiral tags adjusted to the local neighbor priority order.
 
     Example
     -------
@@ -236,7 +230,6 @@ def describe_neighbor_tagging(mol: Mol, include_leaves: bool = False) -> str:
     C1 C3:0 O2:1 N6:2 C0:3 (CHI_TETRAHEDRAL_CCW)
     C3 C1:0 C4:1
     C4 C3:0 O5:1
-    C3-C4 STEREOTRANS
     >>> print(describe_neighbor_tagging(mol, include_leaves=True))
     C0 C1:0
     C1 C3:0 O2:1 N6:2 C0:3 (CHI_TETRAHEDRAL_CCW)
@@ -245,7 +238,6 @@ def describe_neighbor_tagging(mol: Mol, include_leaves: bool = False) -> str:
     C4 C3:0 O5:1
     O5 C4:0
     N6 C1:0
-    C3-C4 STEREOTRANS
 
     """
     if not (mol.HasProp("hasNeighborPriorityTags") and mol.GetBoolProp("hasNeighborPriorityTags")):
@@ -277,9 +269,4 @@ def describe_neighbor_tagging(mol: Mol, include_leaves: bool = False) -> str:
             if tag != ChiralType.CHI_UNSPECIFIED:
                 output.append(f"({tag.name})")
             lines.append(" ".join(output))
-    for bond in mol.GetBonds():
-        tag = bond.GetStereo()
-        if tag != BondStereo.STEREONONE:
-            begin, end = bond.GetBeginAtom(), bond.GetEndAtom()
-            lines.append(f"{atom_str(begin)}-{atom_str(end)} {tag.name}")
     return "\n".join(lines)

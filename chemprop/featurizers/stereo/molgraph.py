@@ -60,7 +60,7 @@ class StereoMolGraphFeaturizer(SimpleMoleculeMolGraphFeaturizer):
         Number of neighbor-priority bits to encode in each directed edge.
     stereo_atoms_only : bool, default=True
         If ``True``, encode neighbor-priority bits only for bonds adjacent to stereochemically
-        relevant atoms (tetrahedral centers and atoms participating in stereo-tagged bonds).
+        relevant atoms (tetrahedral chiral centers).
         If ``False``, all atoms are eligible.
     normalize_chiral_tags : bool, default=True
         If ``True``, transforms all ``CHI_TETRAHEDRAL_CW`` chiral tags to

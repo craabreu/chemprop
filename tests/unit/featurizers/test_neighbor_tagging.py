@@ -1,7 +1,7 @@
 import networkx as nx
 import pytest
 from rdkit import Chem
-from rdkit.Chem.rdchem import BondStereo, ChiralType
+from rdkit.Chem.rdchem import ChiralType
 
 from chemprop.featurizers.stereo.neighbor_tagging import (
     describe_neighbor_tagging,
@@ -22,61 +22,6 @@ def test_neighbor_tagging_chiral_center_only():
     assert center.GetChiralTag() == ChiralType.CHI_TETRAHEDRAL_CCW
 
     assert describe_neighbor_tagging(tagged) == "C1 O2:0 N3:1 C0:2 (CHI_TETRAHEDRAL_CCW)"
-
-
-def test_neighbor_tagging_bond_stereo_only():
-    """Annotating an alkene preserves a consistent trans bond-stereo assignment."""
-    mol = Chem.MolFromSmiles("F/C=C/F")
-
-    tagged = mol_with_neighbor_priority_tags(mol)
-    bond = tagged.GetBondBetweenAtoms(1, 2)
-
-    assert bond is not None
-    assert bond.GetStereo() == BondStereo.STEREOTRANS
-
-    for b in tagged.GetBonds():
-        assert b.HasProp("beginAtomPriorityTag")
-        assert b.HasProp("endAtomPriorityTag")
-
-    assert describe_neighbor_tagging(tagged).splitlines()[-1] == "C1-C2 STEREOTRANS"
-
-
-@pytest.mark.parametrize(
-    "smiles,input_stereo,expected_stereo",
-    [
-        ("F/C=C/F", BondStereo.STEREOE, BondStereo.STEREOTRANS),
-        ("F/C=C\\F", BondStereo.STEREOZ, BondStereo.STEREOCIS),
-    ],
-)
-def test_neighbor_tagging_normalizes_ez_to_cis_trans(smiles, input_stereo, expected_stereo):
-    """E/Z-marked bonds are normalized to cis/trans after neighbor tagging."""
-    mol = Chem.MolFromSmiles(smiles)
-    input_bond = next(bond for bond in mol.GetBonds() if bond.GetBondType() == Chem.BondType.DOUBLE)
-    assert input_bond.GetStereo() == input_stereo
-
-    tagged = mol_with_neighbor_priority_tags(mol)
-    output_bond = next(
-        bond for bond in tagged.GetBonds() if bond.GetBondType() == Chem.BondType.DOUBLE
-    )
-    assert output_bond.GetStereo() == expected_stereo
-    assert output_bond.GetStereo() not in {BondStereo.STEREOE, BondStereo.STEREOZ}
-
-
-def test_neighbor_tagging_combined_atom_and_bond_stereo():
-    """A molecule with atom and bond stereo receives both tag types consistently."""
-    mol = Chem.MolFromSmiles("C[C@](O)(/C=C/O)N")
-
-    tagged = mol_with_neighbor_priority_tags(mol)
-    center = tagged.GetAtomWithIdx(1)
-    bond = tagged.GetBondBetweenAtoms(3, 4)
-
-    assert center.GetChiralTag() == ChiralType.CHI_TETRAHEDRAL_CCW
-    assert bond is not None
-    assert bond.GetStereo() == BondStereo.STEREOTRANS
-
-    desc = describe_neighbor_tagging(tagged)
-    assert "C1 C3:0 O2:1 N6:2 C0:3 (CHI_TETRAHEDRAL_CCW)" in desc
-    assert "C3-C4 STEREOTRANS" in desc
 
 
 def test_neighbor_tagging_idempotent():
@@ -141,7 +86,7 @@ def _to_tagged_nx_graph(mol):
     return graph
 
 
-@pytest.mark.parametrize("base_smiles", ["C[C@H](O)N", "F/C=C/F", "C[C@](O)(/C=C/O)N"])
+@pytest.mark.parametrize("base_smiles", ["C[C@H](O)N", "C[C@](F)(Cl)Br", "CC(C)(C)C"])
 def test_neighbor_tagging_invariant_to_input_smiles_atom_order(base_smiles):
     """Tagging results are invariant under equivalent SMILES atom-order permutations."""
     base_mol = Chem.MolFromSmiles(base_smiles)
@@ -226,13 +171,6 @@ def _bond_priority_snapshot(mol):
             int(bond.GetIntProp("beginAtomPriorityTag")),
             int(bond.GetIntProp("endAtomPriorityTag")),
         )
-        for bond in mol.GetBonds()
-    }
-
-
-def _bond_stereo_snapshot(mol):
-    return {
-        bond.GetIdx(): (bond.GetStereo(), tuple(int(i) for i in bond.GetStereoAtoms()))
         for bond in mol.GetBonds()
     }
 
@@ -343,17 +281,3 @@ def test_normalize_chiral_tags_to_ccw_only_changes_bonds_incident_to_converted_c
     for bond_idx in before:
         if bond_idx not in incident:
             assert after[bond_idx] == before[bond_idx]
-
-
-def test_normalize_chiral_tags_to_ccw_does_not_modify_bond_stereo_annotations():
-    """Chiral-tag normalization does not alter bond stereo flags or stereo-atom assignments."""
-    mol = mol_with_neighbor_priority_tags(Chem.MolFromSmiles("C[C@](O)(/C=C/O)N"))
-    center = next(
-        atom for atom in mol.GetAtoms() if atom.GetChiralTag() != ChiralType.CHI_UNSPECIFIED
-    )
-    center.SetChiralTag(ChiralType.CHI_TETRAHEDRAL_CW)
-    stereo_before = _bond_stereo_snapshot(mol)
-
-    normalize_chiral_tags_to_ccw(mol)
-
-    assert _bond_stereo_snapshot(mol) == stereo_before
