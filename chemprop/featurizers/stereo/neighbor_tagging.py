@@ -3,12 +3,6 @@ from rdkit.Chem.rdchem import Atom, BondStereo, ChiralType, Mol
 from rdkit.Chem.rdmolfiles import CanonicalRankAtoms
 
 CHIRAL_CENTER_TAGS = {ChiralType.CHI_TETRAHEDRAL_CW, ChiralType.CHI_TETRAHEDRAL_CCW}
-STEREOGENIC_BOND_TAGS = {
-    BondStereo.STEREOCIS,
-    BondStereo.STEREOTRANS,
-    BondStereo.STEREOZ,
-    BondStereo.STEREOE,
-}
 
 
 def is_odd_permutation(i: int, j: int, k: int, m: int | None = None) -> bool:
@@ -49,24 +43,6 @@ def top_priority(neighbors: dict[int, int], excluding: int) -> int:
     """
     subset = {k: v for k, v in neighbors.items() if k != excluding}
     return min(subset.keys(), key=subset.get)
-
-
-def normalize_stereo_to_cis_or_trans(stereo: BondStereo) -> BondStereo:
-    """Return the normalized stereochemistry flag of a bond, converting Z/E to cis/trans."""
-    if stereo == BondStereo.STEREOZ:
-        return BondStereo.STEREOCIS
-    if stereo == BondStereo.STEREOE:
-        return BondStereo.STEREOTRANS
-    return stereo
-
-
-def flip_stereo(stereo: BondStereo) -> BondStereo:
-    """Return the flipped stereochemistry flag of a bond."""
-    if stereo in {BondStereo.STEREOCIS, BondStereo.STEREOZ}:
-        return BondStereo.STEREOTRANS
-    if stereo in {BondStereo.STEREOTRANS, BondStereo.STEREOE}:
-        return BondStereo.STEREOCIS
-    return stereo
 
 
 def flip_chiral_tag(chiral_tag: ChiralType) -> ChiralType:
@@ -167,17 +143,6 @@ def mol_with_neighbor_priority_tags(mol: Mol) -> Mol:
         begin, end = bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()
         bond.SetIntProp("endAtomPriorityTag", int(neighbors[begin][end]))
         bond.SetIntProp("beginAtomPriorityTag", int(neighbors[end][begin]))
-
-        stereo = bond.GetStereo()
-        if stereo in STEREOGENIC_BOND_TAGS:
-            stereo_left, stereo_right = bond.GetStereoAtoms()
-            top_left = top_priority(neighbors[begin], excluding=end)
-            top_right = top_priority(neighbors[end], excluding=begin)
-            if (stereo_left == top_left) != (stereo_right == top_right):
-                bond.SetStereo(flip_stereo(stereo))
-            elif stereo in {BondStereo.STEREOZ, BondStereo.STEREOE}:
-                bond.SetStereo(normalize_stereo_to_cis_or_trans(stereo))
-            bond.SetStereoAtoms(int(top_left), int(top_right))
 
     mol.SetBoolProp("hasNeighborPriorityTags", True)
     return mol

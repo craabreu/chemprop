@@ -7,7 +7,6 @@ from chemprop.data.molgraph import MolGraph
 from chemprop.featurizers import SimpleMoleculeMolGraphFeaturizer
 from chemprop.featurizers.stereo.neighbor_tagging import (
     CHIRAL_CENTER_TAGS,
-    STEREOGENIC_BOND_TAGS,
     mol_with_neighbor_priority_tags,
     normalize_chiral_tags_to_ccw,
 )
@@ -130,14 +129,9 @@ class StereoMolGraphFeaturizer(SimpleMoleculeMolGraphFeaturizer):
 
     def _get_atoms_to_encode(self, mol: Chem.Mol) -> set[int]:
         if self.stereo_atoms_only:
-            atoms_to_encode = {
+            return {
                 atom.GetIdx()
                 for atom in mol.GetAtoms()
                 if atom.GetChiralTag() in CHIRAL_CENTER_TAGS
             }
-            for bond in mol.GetBonds():
-                if bond.GetStereo() in STEREOGENIC_BOND_TAGS:
-                    atoms_to_encode.add(bond.GetBeginAtomIdx())
-                    atoms_to_encode.add(bond.GetEndAtomIdx())
-            return atoms_to_encode
         return {atom.GetIdx() for atom in mol.GetAtoms()}
